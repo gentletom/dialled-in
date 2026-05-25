@@ -15,6 +15,27 @@ async function sSet(key, val) {
   try { await window.storage.set(key, JSON.stringify(val)); } catch {}
 }
 
+// ── Anthropic API key — entered on-device, stored locally, never in the repo ──
+const API_KEY_STORAGE = "ft:anthropicApiKey";
+function getApiKey() {
+  try { return localStorage.getItem(API_KEY_STORAGE) || ""; } catch { return ""; }
+}
+function setApiKey(k) {
+  try {
+    if (k && k.trim()) localStorage.setItem(API_KEY_STORAGE, k.trim());
+    else localStorage.removeItem(API_KEY_STORAGE);
+  } catch {}
+}
+function aiHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "x-api-key": getApiKey(),
+    "anthropic-version": "2023-06-01",
+    "anthropic-dangerous-direct-browser-access": "true",
+  };
+}
+
+
 // ── Data Migrations ───────────────────────────────────────────────
 // CURRENT_DATA_VERSION bumps every time we change storage shape.
 // runMigrations() runs once on app load. It only ADDS new data,
@@ -991,7 +1012,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       const ctx = buildMealContext(data);
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aiHeaders(),
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 800,
@@ -1041,7 +1062,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       const ctx = buildMealContext(data);
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aiHeaders(),
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 800,
@@ -4191,7 +4212,7 @@ function CoachChat({ data }) {
 
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        headers: aiHeaders(),
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514",
           max_tokens:600,
@@ -4371,6 +4392,53 @@ function CoachChat({ data }) {
 }
 
 // ── COACH Tab ─────────────────────────────────────────────────────
+// ── API Key settings card (lives in COACH tab) ──
+function ApiKeyCard() {
+  const [key, setKey] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [hasKey, setHasKey] = useState(false);
+  useEffect(() => { setHasKey(!!getApiKey()); }, []);
+  function save() {
+    setApiKey(key);
+    setHasKey(!!key.trim());
+    setKey("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }
+  function clear() { setApiKey(""); setHasKey(false); }
+  return (
+    <div style={{ background:C.surface, border:`1px solid ${hasKey ? C.lime+"40" : C.orange+"60"}`, borderRadius:16, padding:16, marginBottom:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+        <div style={{ fontSize:18 }}>🔑</div>
+        <SL>AI / API Key</SL>
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:10, color: hasKey ? C.lime : C.orange, marginBottom:10 }}>
+        {hasKey ? "Key set — AI features active" : "No key set — meal scan & coach stay off until you add one"}
+      </div>
+      <input
+        type="password"
+        value={key}
+        onChange={e => setKey(e.target.value)}
+        placeholder="sk-ant-..."
+        style={{ width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:8, background:C.surfaceAlt, border:`1px solid ${C.border}`, color:C.white, fontFamily:F.mono, fontSize:12, marginBottom:10 }}
+      />
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={save} disabled={!key.trim()} style={{ flex:1, padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: saved ? C.lime : C.teal, color: saved ? C.dark : C.white, border:"none", cursor: key.trim()?"pointer":"default", opacity: key.trim()?1:0.5 }}>
+          {saved ? "✓ SAVED" : "SAVE KEY"}
+        </button>
+        {hasKey && (
+          <button onClick={clear} style={{ padding:"10px 14px", borderRadius:8, fontFamily:F.mono, fontSize:11, letterSpacing:1, background:"transparent", border:`1px solid ${C.border}`, color:C.gray, cursor:"pointer" }}>
+            CLEAR
+          </button>
+        )}
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.5, marginTop:10 }}>
+        Your Anthropic API key is stored only on this device and sent directly to Anthropic. Get one at console.anthropic.com — usage is billed to your account.
+      </div>
+    </div>
+  );
+}
+
 function CoachTab({ data, updateData, onAction }) {
   const [analysis, setAnalysis] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -4414,7 +4482,7 @@ function CoachTab({ data, updateData, onAction }) {
 
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
-        headers:{ "Content-Type":"application/json" },
+        headers: aiHeaders(),
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514",
           max_tokens:900,
@@ -4566,6 +4634,7 @@ function CoachTab({ data, updateData, onAction }) {
       </div>
 
       {/* Backup & Restore */}
+      <ApiKeyCard />
       <BackupCard />
 
       {/* Export to Claude */}
