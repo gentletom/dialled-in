@@ -329,6 +329,33 @@ async function generateFullBackup() {
   };
 }
 
+// ── Restore a full backup JSON (inverse of generateFullBackup). Used by Import + future SSD restore. ──
+async function importBackup(b) {
+  if (!b || typeof b !== "object") throw new Error("not a valid backup file");
+  const setk = (k, v) => window.storage.set(k, JSON.stringify(v));
+  if ("profile" in b) await setk("ft:profile", b.profile);
+  if ("weightLog" in b) await setk("ft:weightLog", b.weightLog || []);
+  if ("prs" in b) await setk("ft:prs", b.prs || []);
+  if ("workouts" in b) await setk("ft:workouts", b.workouts || []);
+  if ("meals" in b) await setk("ft:meals", b.meals || {});
+  if ("measurements" in b) await setk("ft:measurements", b.measurements || []);
+  if ("chatHistory" in b) await setk("ft:chatHistory", b.chatHistory || []);
+  if ("coachAnalyses" in b) await setk("ft:lastCoachAnalysis", b.coachAnalyses);
+  const photos = b.photos || {};
+  for (const type of ["progress", "goal"]) {
+    const arr = Array.isArray(photos[type]) ? photos[type] : [];
+    const idx = [];
+    for (const p of arr) {
+      if (!p || !p.id) continue;
+      await window.storage.set(`ft:photo:${type}:${p.id}`, JSON.stringify(p));
+      idx.push({ id: p.id, date: p.date });
+    }
+    await setk(type === "progress" ? "ft:photoProgressIndex" : "ft:photoGoalIndex", idx);
+  }
+  if ("version" in b) await setk("ft:dataVersion", b.version);
+}
+
+
 function downloadJSON(obj, filename) {
   try {
     const json = JSON.stringify(obj, null, 2);
@@ -4393,6 +4420,48 @@ function CoachChat({ data }) {
 
 // ── COACH Tab ─────────────────────────────────────────────────────
 // ── API Key settings card (lives in COACH tab) ──
+// ── Import Backup card (restore a downloaded backup JSON into this device) ──
+function ImportBackupCard() {
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!window.confirm("Import this backup? It REPLACES the data currently on this device.")) {
+      e.target.value = ""; return;
+    }
+    setBusy(true); setStatus("Reading file...");
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      setStatus("Writing data...");
+      await importBackup(backup);
+      setStatus("Imported — reloading...");
+      setTimeout(() => window.location.reload(), 900);
+    } catch (err) {
+      setStatus("Import failed: " + ((err && err.message) || "unreadable file"));
+      setBusy(false);
+      e.target.value = "";
+    }
+  }
+  return (
+    <div style={{ background:C.surface, border:`1px solid ${C.teal}40`, borderRadius:16, padding:16, marginBottom:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+        <div style={{ fontSize:18 }}>📤</div>
+        <SL>Import Backup</SL>
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.5, marginBottom:10 }}>
+        Load a DIALLED IN backup .json (e.g. exported from the old artifact) onto this device. Replaces current data.
+      </div>
+      <label style={{ display:"block", width:"100%", boxSizing:"border-box", padding:"12px", borderRadius:10, textAlign:"center", fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: busy ? "#1A1A22" : C.teal, color: busy ? C.gray : C.white, cursor: busy ? "default" : "pointer" }}>
+        {busy ? "WORKING..." : "CHOOSE BACKUP FILE"}
+        <input type="file" accept="application/json,.json" onChange={onFile} disabled={busy} style={{ display:"none" }} />
+      </label>
+      {status && <div style={{ fontFamily:F.mono, fontSize:10, color: status.indexOf("failed") >= 0 ? C.orange : C.lime, marginTop:10 }}>{status}</div>}
+    </div>
+  );
+}
+
 function ApiKeyCard() {
   const [key, setKey] = useState("");
   const [saved, setSaved] = useState(false);
@@ -4636,6 +4705,7 @@ function CoachTab({ data, updateData, onAction }) {
       {/* Backup & Restore */}
       <ApiKeyCard />
       <BackupCard />
+      <ImportBackupCard />
 
       {/* Export to Claude */}
       <ExportToClaudeCard data={data} />
