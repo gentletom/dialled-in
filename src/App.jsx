@@ -1037,6 +1037,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       if (!base64) throw new Error("image processing failed");
 
       const ctx = buildMealContext(data);
+      if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: aiHeaders(),
@@ -1087,6 +1088,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
     setItemized(null);
     try {
       const ctx = buildMealContext(data);
+      if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: aiHeaders(),
@@ -4237,6 +4239,7 @@ function CoachChat({ data }) {
         content: m.content,
       }));
 
+      if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers: aiHeaders(),
@@ -4549,6 +4552,7 @@ function CoachTab({ data, updateData, onAction }) {
   "weeklyRating": 7
 }`;
 
+      if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers: aiHeaders(),
