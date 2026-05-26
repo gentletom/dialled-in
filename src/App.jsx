@@ -1042,7 +1042,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
         method: "POST",
         headers: aiHeaders(),
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 800,
           messages: [{
             role: "user",
@@ -1093,7 +1093,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
         method: "POST",
         headers: aiHeaders(),
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-haiku-4-5-20251001",
           max_tokens: 800,
           messages: [{
             role: "user",
@@ -2713,6 +2713,40 @@ function WorkoutPreview({ wo, workoutHistory, isToday }) {
 }
 
 // ── TODAY Tab ─────────────────────────────────────────────────────
+// ── Edit Session modal (tap a session card in history to fix date/name/duration/note) ──
+function EditSessionModal({ session, onSave, onClose }) {
+  const [date, setDate] = useState(session.date);
+  const [name, setName] = useState(session.name);
+  const [duration, setDuration] = useState(String(session.duration));
+  const [note, setNote] = useState(session.note || "");
+  function save() {
+    const dur = Math.max(1, Math.min(600, parseInt(duration) || 1));
+    onSave({ ...session, date, name: name.trim() || session.name, duration: dur, note: note.trim() });
+  }
+  const inputStyle = { width:"100%", boxSizing:"border-box", padding:"9px 11px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:7, color:C.white, fontFamily:F.mono, fontSize:12 };
+  const labelStyle = { fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:3 };
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.teal}60`, borderRadius:14, padding:18, maxWidth:380, width:"100%" }}>
+        <div style={{ fontFamily:F.display, fontSize:22, color:C.teal, marginBottom:12, letterSpacing:2 }}>EDIT SESSION</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <div><div style={labelStyle}>DATE</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inputStyle} /></div>
+          <div><div style={labelStyle}>NAME / SPLIT</div><input type="text" value={name} onChange={e=>setName(e.target.value)} style={inputStyle} /></div>
+          <div><div style={labelStyle}>DURATION (MIN)</div><input type="number" min="1" max="600" value={duration} onChange={e=>setDuration(e.target.value)} style={inputStyle} /></div>
+          <div><div style={labelStyle}>NOTE</div><input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="how it felt..." style={inputStyle} /></div>
+        </div>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:10, lineHeight:1.4 }}>
+          Per-set/per-exercise editing coming next. For now this fixes date / duration / name / note.
+        </div>
+        <div style={{ display:"flex", gap:8, marginTop:14 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>CANCEL</button>
+          <button onClick={save} style={{ flex:1, padding:"10px", background:C.teal, border:"none", color:C.white, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>SAVE</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TodayTab({ data, updateData, onLogMeal }) {
   const actualDayName = DAYS[new Date().getDay()];
   const actualSplit = SPLIT_MAP[actualDayName];
@@ -2741,6 +2775,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
   const [restType, setRestType] = useState("normal"); // "normal" | "superset" — drives rest thresholds
   const [sessionNote, setSessionNote] = useState("");
   const [finished, setFinished] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
   const [expandedEx, setExpandedEx] = useState(null);
   const [hasRestored, setHasRestored] = useState(false); // gate autosave until initial load completes
   const [resumedAt, setResumedAt] = useState(null); // timestamp of restored session, drives banner
@@ -3492,7 +3528,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
         {/* Session history — always visible at bottom of LIFTS */}
         <div style={{ marginTop:14 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, textTransform:"uppercase", letterSpacing:1.5 }}>Session History <span style={{ textTransform:"none", fontSize:9, color:C.gray, marginLeft:6 }}>· tap to delete</span></div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, textTransform:"uppercase", letterSpacing:1.5 }}>Session History <span style={{ textTransform:"none", fontSize:9, color:C.gray, marginLeft:6 }}>· tap to edit · × to delete</span></div>
           </div>
           {data.workouts.length === 0 ? (
             <Card>
@@ -3501,19 +3537,23 @@ function TodayTab({ data, updateData, onLogMeal }) {
           ) : (
             data.workouts.slice(0, 5).map(session => (
               <div key={session.id}
-                onClick={() => {
-                  if (window.confirm(`Delete session "${session.name}" from ${session.date}? Cannot be undone.`)) {
-                    updateData("workouts", data.workouts.filter(w => w.id !== session.id));
-                  }
-                }}
-                style={{ background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:14, padding:14, marginBottom:10, cursor:"pointer" }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
-                  <div>
+                onClick={() => setEditTarget(session)}
+                style={{ background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:14, padding:14, marginBottom:10, cursor:"pointer", position:"relative" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8, gap:8 }}>
+                  <div style={{ flex:1, minWidth:0 }}>
                     <div style={{ fontWeight:600, fontSize:14 }}>{session.name}</div>
                     <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>{session.date} · {session.split}</div>
                     {session.note && <div style={{ fontFamily:F.mono, fontSize:11, color:C.lime, marginTop:3 }}>{session.note}</div>}
                   </div>
-                  {session.prs > 0 && <Tag>{session.prs} PR{session.prs !== 1 ? "s" : ""} 🏆</Tag>}
+                  <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                    {session.prs > 0 && <Tag>{session.prs} PR{session.prs !== 1 ? "s" : ""} 🏆</Tag>}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(session); }}
+                      aria-label="Delete session"
+                      style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.gray, fontSize:14, lineHeight:1, width:26, height:26, borderRadius:6, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      ×
+                    </button>
+                  </div>
                 </div>
                 <div style={{ display:"flex", gap:20, marginBottom:session.exercises?.length ? 8 : 0 }}>
                   <div style={{ textAlign:"center" }}><div style={{ fontFamily:F.mono, fontSize:15, fontWeight:600, color:C.teal }}>{session.duration}m</div><div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginTop:3 }}>DURATION</div></div>
@@ -3532,6 +3572,35 @@ function TodayTab({ data, updateData, onLogMeal }) {
           )}
         </div>
       </div>
+
+      {/* Delete-session confirmation modal */}
+      {deleteTarget && (
+        <div onClick={() => setDeleteTarget(null)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.orange}`, borderRadius:14, padding:18, maxWidth:380, width:"100%" }}>
+            <div style={{ fontFamily:F.display, fontSize:22, color:C.orange, marginBottom:8, letterSpacing:2 }}>DELETE SESSION?</div>
+            <div style={{ fontFamily:F.body, fontSize:13, color:C.white, lineHeight:1.5, marginBottom:14 }}>
+              <strong>{deleteTarget.name}</strong> from {deleteTarget.date} · {deleteTarget.duration}m · {deleteTarget.sets} sets
+              <div style={{ color:C.gray, fontSize:11, marginTop:6 }}>This can't be undone.</div>
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ flex:1, padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>CANCEL</button>
+              <button onClick={() => { updateData("workouts", data.workouts.filter(w => w.id !== deleteTarget.id)); setDeleteTarget(null); }} style={{ flex:1, padding:"10px", background:C.orange, border:"none", color:C.white, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>DELETE</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit-session modal */}
+      {editTarget && (
+        <EditSessionModal
+          session={editTarget}
+          onSave={(updated) => {
+            updateData("workouts", data.workouts.map(w => w.id === updated.id ? updated : w));
+            setEditTarget(null);
+          }}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
     </div>
   );
 }// ── PLAN Tab ──────────────────────────────────────────────────────
@@ -4271,7 +4340,7 @@ function CoachChat({ data }) {
         method:"POST",
         headers: aiHeaders(),
         body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",
+          model:"claude-haiku-4-5-20251001",
           max_tokens:600,
           system: systemPrompt,
           messages: apiMessages,
@@ -4646,7 +4715,7 @@ function CoachTab({ data, updateData, onAction }) {
         method:"POST",
         headers: aiHeaders(),
         body:JSON.stringify({
-          model:"claude-sonnet-4-20250514",
+          model:"claude-haiku-4-5-20251001",
           max_tokens:900,
           messages:[{ role:"user", content:prompt }],
         }),
