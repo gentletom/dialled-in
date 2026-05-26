@@ -4423,61 +4423,71 @@ function CoachChat({ data }) {
 
 // ── COACH Tab ─────────────────────────────────────────────────────
 // ── API Key settings card (lives in COACH tab) ──
-// ── Import Backup card (restore a downloaded backup JSON into this device) ──
-function ImportBackupCard() {
-  const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function onFile(e) {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    if (!window.confirm("Import this backup? It REPLACES the data currently on this device.")) {
-      e.target.value = ""; return;
-    }
-    setBusy(true); setStatus("Reading file...");
-    try {
-      const text = await file.text();
-      const backup = JSON.parse(text);
-      setStatus("Writing data...");
-      await importBackup(backup);
-      setStatus("Imported — reloading...");
-      setTimeout(() => window.location.reload(), 900);
-    } catch (err) {
-      setStatus("Import failed: " + ((err && err.message) || "unreadable file"));
-      setBusy(false);
-      e.target.value = "";
-    }
-  }
-  return (
-    <div style={{ background:C.surface, border:`1px solid ${C.teal}40`, borderRadius:16, padding:16, marginBottom:12 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
-        <div style={{ fontSize:18 }}>📤</div>
-        <SL>Import Backup</SL>
-      </div>
-      <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.5, marginBottom:10 }}>
-        Load a DIALLED IN backup .json (e.g. exported from the old artifact) onto this device. Replaces current data.
-      </div>
-      <label style={{ display:"block", width:"100%", boxSizing:"border-box", padding:"12px", borderRadius:10, textAlign:"center", fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: busy ? "#1A1A22" : C.teal, color: busy ? C.gray : C.white, cursor: busy ? "default" : "pointer" }}>
-        {busy ? "WORKING..." : "CHOOSE BACKUP FILE"}
-        <input type="file" accept="application/json,.json" onChange={onFile} disabled={busy} style={{ display:"none" }} />
-      </label>
-      {status && <div style={{ fontFamily:F.mono, fontSize:10, color: status.indexOf("failed") >= 0 ? C.orange : C.lime, marginTop:10 }}>{status}</div>}
-    </div>
-  );
-}
-
 function ApiKeyCard() {
   const [key, setKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [hasKey, setHasKey] = useState(false);
-  useEffect(() => { setHasKey(!!getApiKey()); }, []);
+  const [maskedKey, setMaskedKey] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(""); // "" | "ok" | "fail"
+  const [testError, setTestError] = useState("");
+
+  useEffect(() => {
+    const k = getApiKey();
+    setHasKey(!!k);
+    setMaskedKey(k ? `${k.slice(0,7)}…${k.slice(-4)}` : "");
+  }, []);
+
   function save() {
     setApiKey(key);
-    setHasKey(!!key.trim());
+    const k = getApiKey();
+    setHasKey(!!k);
+    setMaskedKey(k ? `${k.slice(0,7)}…${k.slice(-4)}` : "");
     setKey("");
     setSaved(true);
+    setTestResult(""); setTestError("");
     setTimeout(() => setSaved(false), 2500);
   }
-  function clear() { setApiKey(""); setHasKey(false); }
+  function clear() {
+    setApiKey("");
+    setHasKey(false);
+    setMaskedKey("");
+    setTestResult(""); setTestError("");
+  }
+  async function testKey() {
+    if (!getApiKey()) return;
+    setTesting(true); setTestResult(""); setTestError("");
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: aiHeaders(),
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 5,
+          messages: [{ role: "user", content: "ping" }],
+        }),
+      });
+      if (r.ok) { setTestResult("ok"); }
+      else {
+        const txt = await r.text().catch(() => "");
+        setTestResult("fail");
+        setTestError(`${r.status} ${(txt || r.statusText || "").slice(0, 120)}`);
+      }
+    } catch (e) {
+      setTestResult("fail");
+      setTestError((e && e.message) || "network error");
+    }
+    setTesting(false);
+    setTimeout(() => { setTestResult(""); setTestError(""); }, 10000);
+  }
+
+  const canSave = !!key.trim();
+  const onDevice = hasKey && !canSave && !saved;
+  const btnBg = saved ? C.lime : onDevice ? "transparent" : (canSave ? C.teal : "#1A1A22");
+  const btnColor = saved ? C.dark : onDevice ? C.lime : (canSave ? C.white : C.gray);
+  const btnBorder = onDevice ? `1px solid ${C.lime}` : "none";
+  const btnLabel = saved ? "✓ SAVED" : onDevice ? `✓ KEY ON DEVICE (${maskedKey})` : (hasKey ? "REPLACE KEY" : "SAVE KEY");
+
   return (
     <div style={{ background:C.surface, border:`1px solid ${hasKey ? C.lime+"40" : C.orange+"60"}`, borderRadius:16, padding:16, marginBottom:12 }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
@@ -4491,12 +4501,12 @@ function ApiKeyCard() {
         type="password"
         value={key}
         onChange={e => setKey(e.target.value)}
-        placeholder="sk-ant-..."
+        placeholder={hasKey ? "paste a new key to replace" : "sk-ant-..."}
         style={{ width:"100%", boxSizing:"border-box", padding:"10px 12px", borderRadius:8, background:C.surfaceAlt, border:`1px solid ${C.border}`, color:C.white, fontFamily:F.mono, fontSize:12, marginBottom:10 }}
       />
-      <div style={{ display:"flex", gap:8 }}>
-        <button onClick={save} disabled={!key.trim()} style={{ flex:1, padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: saved ? C.lime : C.teal, color: saved ? C.dark : C.white, border:"none", cursor: key.trim()?"pointer":"default", opacity: key.trim()?1:0.5 }}>
-          {saved ? "✓ SAVED" : "SAVE KEY"}
+      <div style={{ display:"flex", gap:8, marginBottom: hasKey ? 8 : 0 }}>
+        <button onClick={save} disabled={!canSave} style={{ flex:1, padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: btnBg, color: btnColor, border: btnBorder, cursor: canSave?"pointer":"default" }}>
+          {btnLabel}
         </button>
         {hasKey && (
           <button onClick={clear} style={{ padding:"10px 14px", borderRadius:8, fontFamily:F.mono, fontSize:11, letterSpacing:1, background:"transparent", border:`1px solid ${C.border}`, color:C.gray, cursor:"pointer" }}>
@@ -4504,6 +4514,14 @@ function ApiKeyCard() {
           </button>
         )}
       </div>
+      {hasKey && (
+        <button onClick={testKey} disabled={testing} style={{ width:"100%", padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: testResult==="ok" ? C.lime : testResult==="fail" ? C.orange : "transparent", color: testResult==="ok" ? C.dark : testResult==="fail" ? C.white : C.teal, border: testResult ? "none" : `1px solid ${C.teal}`, cursor: testing?"default":"pointer" }}>
+          {testing ? "TESTING..." : testResult==="ok" ? "✓ KEY WORKS — AI READY" : testResult==="fail" ? "✗ KEY FAILED" : "TEST KEY (1 call, ~5 tokens)"}
+        </button>
+      )}
+      {testError && (
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.orange, marginTop:6, lineHeight:1.4 }}>{testError}</div>
+      )}
       <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.5, marginTop:10 }}>
         Your Anthropic API key is stored only on this device and sent directly to Anthropic. Get one at console.anthropic.com — usage is billed to your account.
       </div>
