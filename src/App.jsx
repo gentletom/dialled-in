@@ -2818,6 +2818,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
   useEffect(() => {
     if (!hasRestored) return;
     if (!actualSplit) return; // skip on rest days
+    if (finished) return; // STOP saving after FINISH — prevents resurrected-session bug
     // Save if session is started OR if user has typed any values (defends against backgrounding before tapping START)
     const hasTypedValues = Object.values(liveSets).some(arr =>
       Array.isArray(arr) && arr.some(s => s.done || (s.weight && s.weight !== "") || (s.reps && s.reps !== "") || s.rir)
@@ -2837,7 +2838,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
     window.storage.set(LIVE_SESSION_KEY, JSON.stringify(payload)).then(() => {
       setLastSaveAt(Date.now());
     }).catch(() => {});
-  }, [sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, hasRestored, actualSplit]);
+  }, [sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, hasRestored, actualSplit, finished]);
 
   // ── Heartbeat save every 5s while session has activity ─────────
   // Defends against mobile browsers cancelling in-flight saves during backgrounding.
@@ -2845,6 +2846,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
   useEffect(() => {
     if (!hasRestored) return;
     if (!actualSplit) return;
+    if (finished) return; // STOP heartbeat after FINISH
     const hasActivity = sessionStarted || Object.values(liveSets).some(arr =>
       Array.isArray(arr) && arr.some(s => s.done || s.weight || s.reps || s.rir)
     );
@@ -2860,12 +2862,13 @@ function TodayTab({ data, updateData, onLogMeal }) {
       }).catch(() => {});
     }, 5000);
     return () => clearInterval(id);
-  }, [hasRestored, actualSplit, sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx]);
+  }, [hasRestored, actualSplit, sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, finished]);
 
   // ── Force-save when tab hidden / backgrounded — mobile browsers can kill backgrounded tabs ─
   useEffect(() => {
     if (!hasRestored) return;
     if (!actualSplit) return;
+    if (finished) return; // STOP force-save after FINISH
     function forceSave() {
       const hasTypedValues = Object.values(liveSets).some(arr =>
         Array.isArray(arr) && arr.some(s => s.done || (s.weight && s.weight !== "") || (s.reps && s.reps !== "") || s.rir)
@@ -2896,11 +2899,23 @@ function TodayTab({ data, updateData, onLogMeal }) {
       window.removeEventListener("pagehide", forceSave);
       window.removeEventListener("blur", forceSave);
     };
-  }, [sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, hasRestored, actualSplit]);
+  }, [sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, hasRestored, actualSplit, finished]);
 
   function liveKey(exIdx) { return wo ? `${wo.label}_${exIdx}` : `_${exIdx}`; }
 
   function updateLiveSet(exIdx, setIdx, field, val) {
+    // Clamp absurd inputs: max 2000 lbs / 200 reps. Empty string stays empty (clear).
+    if (val !== "" && val != null) {
+      if (field === "weight") {
+        const w = parseFloat(val);
+        if (!isNaN(w) && w > 2000) val = "2000";
+        else if (!isNaN(w) && w < 0) val = "0";
+      } else if (field === "reps") {
+        const r = parseInt(val);
+        if (!isNaN(r) && r > 200) val = "200";
+        else if (!isNaN(r) && r < 0) val = "0";
+      }
+    }
     const key = liveKey(exIdx);
     setLiveSets(prev => ({ ...prev, [key]: (prev[key]||[]).map((s, i) => i === setIdx ? { ...s, [field]:val } : s) }));
   }
@@ -3477,7 +3492,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
         {/* Session history — always visible at bottom of LIFTS */}
         <div style={{ marginTop:14 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, textTransform:"uppercase", letterSpacing:1.5 }}>Session History</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, textTransform:"uppercase", letterSpacing:1.5 }}>Session History <span style={{ textTransform:"none", fontSize:9, color:C.gray, marginLeft:6 }}>· tap to delete</span></div>
           </div>
           {data.workouts.length === 0 ? (
             <Card>
@@ -3485,7 +3500,13 @@ function TodayTab({ data, updateData, onLogMeal }) {
             </Card>
           ) : (
             data.workouts.slice(0, 5).map(session => (
-              <div key={session.id} style={{ background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:14, padding:14, marginBottom:10 }}>
+              <div key={session.id}
+                onClick={() => {
+                  if (window.confirm(`Delete session "${session.name}" from ${session.date}? Cannot be undone.`)) {
+                    updateData("workouts", data.workouts.filter(w => w.id !== session.id));
+                  }
+                }}
+                style={{ background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:14, padding:14, marginBottom:10, cursor:"pointer" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
                   <div>
                     <div style={{ fontWeight:600, fontSize:14 }}>{session.name}</div>
@@ -5893,9 +5914,9 @@ export default function App() {
   const coachColor = coachScore >= 80 ? C.lime : coachScore >= 50 ? C.amber : C.orange;
 
   function fabAction() {
-    if (tab === "gains") return setModal("measurements");
-    if (tab === "lifts") return setModal("workout");
-    return setModal("weight");
+    // FAB defaults to MEAL LOG everywhere — that's what you do most often.
+    // Workout logging lives on LIFTS as "Start Session"; weight stays on COACH completeness.
+    return setModal("meal");
   }
 
   const navItems = [
@@ -5910,7 +5931,7 @@ export default function App() {
     if (action === "meal") setModal("meal");
     else if (action === "meal_hist") setModal("meal_hist");
     else if (action === "weight") setModal("weight");
-    else if (action === "workout") setModal("workout");
+    else if (action === "workout") setTab("lifts");
     else if (action === "measurements") setModal("measurements");
     else if (action === "pr") setModal("pr");
   }
@@ -6025,7 +6046,6 @@ export default function App() {
       {modal === "weight" && <WeightModal data={appData} updateData={updateData} onClose={() => setModal(null)} />}
       {modal === "meal" && <MealModal data={appData} updateData={updateData} onClose={() => { setModal(null); setMealEditDate(null); }} initialDate={mealEditDate || undefined} />}
       {modal === "meal_hist" && <MealModal data={appData} updateData={updateData} onClose={() => setModal(null)} initialDate={(() => { const d = new Date(); d.setDate(d.getDate()-1); return toLocalDateStr(d); })()} />}
-      {modal === "workout" && <WorkoutModal data={appData} updateData={updateData} onClose={() => setModal(null)} />}
       {modal === "pr" && <PRModal data={appData} updateData={updateData} onClose={() => setModal(null)} />}
       {modal === "measurements" && <MeasurementsModal data={appData} updateData={updateData} onClose={() => setModal(null)} />}
     </div>
