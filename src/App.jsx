@@ -4209,10 +4209,13 @@ function CoachChat({ data }) {
     load();
   }, []);
 
-  // Scroll to bottom on new messages
+  // Scroll to bottom on NEW messages only; skip initial mount, use block:nearest so it
+  // doesn't yank the whole page (which was leaving COACH parked in empty padding below).
+  const didMountRef = React.useRef(false);
   useEffect(() => {
+    if (!didMountRef.current) { didMountRef.current = true; return; }
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior:"smooth" });
+      messagesEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
     }
   }, [messages]);
 
