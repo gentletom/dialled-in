@@ -488,8 +488,36 @@ Return ONLY valid JSON, no markdown:
   "carbs": <sum of item carbs>,
   "fat": <sum of item fat>,
   "description": "short meal label (e.g. 'Breakfast: pancakes + fruit + shake')",
+  "slot": "<exactly one of: breakfast | lunch | snack | pre_workout | post_workout | dinner — infer from text ('breakfast', 'lunch', 'pre-workout' wins) else from typical time of day>",
   "comment": "one sentence: how this fits today's targets, what's left to hit"
 }`;
+}
+
+// ── Meal slot model (used by MealModal + meal entry list) ──
+const MEAL_SLOTS = [
+  { id: "breakfast",    label: "Breakfast", emoji: "🍳" },
+  { id: "lunch",        label: "Lunch",     emoji: "🥗" },
+  { id: "snack",        label: "Snack",     emoji: "🥨" },
+  { id: "pre_workout",  label: "Pre-WO",    emoji: "⚡" },
+  { id: "post_workout", label: "Post-WO",   emoji: "💪" },
+  { id: "dinner",       label: "Dinner",    emoji: "🍽️" },
+];
+
+// Infer the meal slot from free-text description first (keywords win), then time of day.
+function inferMealSlot(text, dt) {
+  const t = (text || "").toLowerCase();
+  if (/\b(pre[-\s]?workout|pre[-\s]?wo)\b/.test(t)) return "pre_workout";
+  if (/\b(post[-\s]?workout|post[-\s]?wo)\b/.test(t)) return "post_workout";
+  if (/\bbreakfast\b/.test(t)) return "breakfast";
+  if (/\blunch\b/.test(t)) return "lunch";
+  if (/\bdinner\b/.test(t)) return "dinner";
+  if (/\bsnack\b/.test(t)) return "snack";
+  const h = (dt instanceof Date ? dt : new Date()).getHours();
+  if (h >= 5 && h < 11) return "breakfast";
+  if (h >= 11 && h < 14) return "lunch";
+  if (h >= 14 && h < 17) return "snack";
+  if (h >= 17 && h < 21) return "dinner";
+  return "snack";
 }
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -1008,6 +1036,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
   const [carb, setCarb] = useState("");
   const [fat, setFat] = useState("");
   const [desc, setDesc] = useState("");
+  const [slot, setSlot] = useState(() => inferMealSlot("", new Date()));
   const [textDesc, setTextDesc] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [aiMsg, setAiMsg] = useState("");
@@ -1072,6 +1101,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       setFat(String(parsed.fat || ""));
       if (parsed.description) setDesc(parsed.description);
       if (Array.isArray(parsed.items) && parsed.items.length > 0) setItemized(parsed.items);
+      if (parsed.slot) setSlot(parsed.slot); else if (parsed.description) setSlot(inferMealSlot(parsed.description, new Date()));
       setAiMsg(parsed.comment ? `✓ ${parsed.calories}kcal · ${parsed.protein}g protein — ${parsed.comment}` : `✓ AI: ${parsed.calories} kcal · ${parsed.protein}g protein — review and save`);
     } catch (e) {
       console.error("Food analysis error:", e);
@@ -1120,6 +1150,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       setFat(String(parsed.fat || ""));
       if (parsed.description) setDesc(parsed.description);
       if (Array.isArray(parsed.items) && parsed.items.length > 0) setItemized(parsed.items);
+      if (parsed.slot) setSlot(parsed.slot); else if (parsed.description) setSlot(inferMealSlot(parsed.description, new Date()));
       setAiMsg(parsed.comment ? `✓ ${parsed.calories}kcal · ${parsed.protein}g protein — ${parsed.comment}` : `✓ AI: ${parsed.calories} kcal · ${parsed.protein}g protein — review and save`);
     } catch (e) {
       console.error("Text analysis error:", e);
@@ -1131,6 +1162,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
 
   function clearForm() {
     setCal(""); setProt(""); setCarb(""); setFat(""); setDesc(""); setTextDesc(""); setAiMsg(""); setItemized(null); setEditingEntryId(null);
+    setSlot(inferMealSlot("", new Date()));
   }
 
   function startEditEntry(entry) {
@@ -1141,6 +1173,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
     setFat(String(entry.fat || ""));
     setDesc(entry.description || "");
     setItemized(Array.isArray(entry.items) && entry.items.length > 0 ? entry.items : null);
+    setSlot(entry.slot || inferMealSlot(entry.description || "", new Date()));
     setAiMsg("");
     setTextDesc("");
     // Scroll the form into view
@@ -1181,6 +1214,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           fat: fatN,
           description: desc.trim() || "Meal",
           items: itemized || null,
+          slot: slot,
           ...(original?.legacy ? { legacy: true } : {}),
         };
         updatedEntries = existingEntries.map(e => e.id === editingEntryId ? updated : e);
@@ -1195,6 +1229,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           fat: fatN,
           description: desc.trim() || "Meal",
           items: itemized || null,
+          slot: slot,
         };
         updatedEntries = [...existingEntries, newEntry];
       }
@@ -1379,6 +1414,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
                     <div style={{ fontFamily:F.body, fontSize:12, color:C.white, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                       {isEditing && <span style={{ color:C.lime, fontFamily:F.mono, fontSize:9, marginRight:6 }}>EDITING</span>}
                       {e.legacy && !isEditing && <span style={{ color:C.amber, fontFamily:F.mono, fontSize:9, marginRight:6 }}>LEGACY</span>}
+                      {(() => { const m = e.slot && MEAL_SLOTS.find(x => x.id === e.slot); return m ? <span style={{ color:C.teal, fontFamily:F.mono, fontSize:10, marginRight:6 }} title={m.label}>{m.emoji}</span> : null; })()}
                       {e.description}
                     </div>
                     <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>
@@ -1415,6 +1451,22 @@ function MealModal({ data, updateData, onClose, initialDate }) {
             CANCEL EDIT
           </button>
         )}
+      </div>
+
+      {/* MEAL SLOT picker (auto-detected from time + description; tap to override) */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:5 }}>SLOT</div>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+          {MEAL_SLOTS.map(opt => {
+            const active = slot === opt.id;
+            return (
+              <button key={opt.id} onClick={() => setSlot(opt.id)}
+                style={{ padding:"6px 10px", borderRadius:14, fontFamily:F.mono, fontSize:10, letterSpacing:0.5, background: active ? C.teal : "transparent", color: active ? C.dark : C.grayLight, border:`1px solid ${active ? C.teal : C.border}`, cursor:"pointer" }}>
+                {opt.emoji} {opt.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* AI Photo scanner */}
@@ -2713,21 +2765,101 @@ function WorkoutPreview({ wo, workoutHistory, isToday }) {
 }
 
 // ── TODAY Tab ─────────────────────────────────────────────────────
-// ── Edit Session modal (tap a session card in history to fix date/name/duration/note) ──
+// ── Edit Session modal (date/name/duration/note + per-set editing) ──
 function EditSessionModal({ session, onSave, onClose }) {
   const [date, setDate] = useState(session.date);
   const [name, setName] = useState(session.name);
   const [duration, setDuration] = useState(String(session.duration));
   const [note, setNote] = useState(session.note || "");
+  const [exercises, setExercises] = useState(() =>
+    (session.exercises || []).map(ex => ({
+      name: ex.name,
+      target: ex.target,
+      setsData: Array.isArray(ex.setsData) ? ex.setsData.map(s => ({
+        weight: s.weight != null ? String(s.weight) : "",
+        reps: s.reps != null ? String(s.reps) : "",
+        rir: s.rir || null,
+      })) : [],
+    }))
+  );
+
+  function updateSet(exIdx, setIdx, field, val) {
+    if (val !== "" && val != null) {
+      if (field === "weight") {
+        const w = parseFloat(val);
+        if (!isNaN(w) && w > 2000) val = "2000";
+        else if (!isNaN(w) && w < 0) val = "0";
+      } else if (field === "reps") {
+        const r = parseInt(val);
+        if (!isNaN(r) && r > 200) val = "200";
+        else if (!isNaN(r) && r < 0) val = "0";
+      }
+    }
+    setExercises(prev => prev.map((ex, i) =>
+      i !== exIdx ? ex :
+      { ...ex, setsData: ex.setsData.map((s, j) => j === setIdx ? { ...s, [field]: val } : s) }
+    ));
+  }
+  function updateExName(exIdx, val) {
+    setExercises(prev => prev.map((ex, i) => i === exIdx ? { ...ex, name: val } : ex));
+  }
+  function addSet(exIdx) {
+    setExercises(prev => prev.map((ex, i) =>
+      i !== exIdx ? ex :
+      { ...ex, setsData: [...ex.setsData, { weight: "", reps: "", rir: null }] }
+    ));
+  }
+  function removeSet(exIdx, setIdx) {
+    setExercises(prev => prev.map((ex, i) =>
+      i !== exIdx ? ex :
+      { ...ex, setsData: ex.setsData.filter((_, j) => j !== setIdx) }
+    ));
+  }
+  function removeExercise(exIdx) {
+    setExercises(prev => prev.filter((_, i) => i !== exIdx));
+  }
+
   function save() {
     const dur = Math.max(1, Math.min(600, parseInt(duration) || 1));
-    onSave({ ...session, date, name: name.trim() || session.name, duration: dur, note: note.trim() });
+    const cleanExercises = exercises
+      .filter(ex => ex.setsData.length > 0)
+      .map(ex => {
+        const cleanSets = ex.setsData
+          .map(s => ({
+            weight: parseFloat(s.weight) || 0,
+            reps: parseInt(s.reps) || 0,
+            rir: s.rir || null,
+          }))
+          .filter(s => s.weight > 0 || s.reps > 0);
+        return {
+          name: ex.name.trim() || "Exercise",
+          target: ex.target,
+          setsData: cleanSets,
+          sets: cleanSets.map(s => `${s.weight}×${s.reps}${s.rir ? ` (${s.rir.toUpperCase()})` : ""}`).join(", "),
+        };
+      })
+      .filter(ex => ex.setsData.length > 0);
+    const totalSets = cleanExercises.reduce((a, ex) => a + ex.setsData.length, 0);
+    const totalVol = Math.round(cleanExercises.flatMap(ex => ex.setsData).reduce((a, s) => a + s.weight * s.reps, 0));
+    onSave({
+      ...session,
+      date,
+      name: name.trim() || session.name,
+      duration: dur,
+      note: note.trim(),
+      exercises: cleanExercises,
+      sets: totalSets,
+      volume: totalVol,
+    });
   }
+
   const inputStyle = { width:"100%", boxSizing:"border-box", padding:"9px 11px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:7, color:C.white, fontFamily:F.mono, fontSize:12 };
   const labelStyle = { fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:3 };
+  const setInputStyle = { width:"100%", boxSizing:"border-box", padding:"6px 8px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:5, color:C.white, fontFamily:F.mono, fontSize:11, textAlign:"center" };
+
   return (
-    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.teal}60`, borderRadius:14, padding:18, maxWidth:380, width:"100%" }}>
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:14, overflowY:"auto" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.teal}60`, borderRadius:14, padding:16, maxWidth:420, width:"100%", maxHeight:"90vh", overflowY:"auto" }}>
         <div style={{ fontFamily:F.display, fontSize:22, color:C.teal, marginBottom:12, letterSpacing:2 }}>EDIT SESSION</div>
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           <div><div style={labelStyle}>DATE</div><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inputStyle} /></div>
@@ -2735,10 +2867,42 @@ function EditSessionModal({ session, onSave, onClose }) {
           <div><div style={labelStyle}>DURATION (MIN)</div><input type="number" min="1" max="600" value={duration} onChange={e=>setDuration(e.target.value)} style={inputStyle} /></div>
           <div><div style={labelStyle}>NOTE</div><input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="how it felt..." style={inputStyle} /></div>
         </div>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:10, lineHeight:1.4 }}>
-          Per-set/per-exercise editing coming next. For now this fixes date / duration / name / note.
+
+        <div style={{ marginTop:18, marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1 }}>EXERCISES · {exercises.length}</div>
+          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>tap × to remove · totals recompute on save</div>
         </div>
-        <div style={{ display:"flex", gap:8, marginTop:14 }}>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {exercises.map((ex, exIdx) => (
+            <div key={exIdx} style={{ background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:10, padding:10 }}>
+              <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:8 }}>
+                <input type="text" value={ex.name} onChange={e=>updateExName(exIdx, e.target.value)} style={{ ...inputStyle, fontSize:11, padding:"6px 9px", flex:1 }} />
+                <button onClick={() => removeExercise(exIdx)} aria-label="Remove exercise" style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.orange, width:28, height:28, borderRadius:6, cursor:"pointer", fontSize:14, lineHeight:1 }}>×</button>
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"30px 1fr 1fr 30px", gap:6, alignItems:"center", fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:4 }}>
+                <div style={{ textAlign:"center" }}>#</div>
+                <div style={{ textAlign:"center" }}>LBS</div>
+                <div style={{ textAlign:"center" }}>REPS</div>
+                <div></div>
+              </div>
+              {ex.setsData.map((s, setIdx) => (
+                <div key={setIdx} style={{ display:"grid", gridTemplateColumns:"30px 1fr 1fr 30px", gap:6, alignItems:"center", marginBottom:5 }}>
+                  <div style={{ textAlign:"center", fontFamily:F.mono, fontSize:10, color:C.gray }}>{setIdx + 1}</div>
+                  <input type="number" inputMode="decimal" value={s.weight} onChange={e=>updateSet(exIdx, setIdx, "weight", e.target.value)} style={setInputStyle} />
+                  <input type="number" inputMode="numeric" value={s.reps} onChange={e=>updateSet(exIdx, setIdx, "reps", e.target.value)} style={setInputStyle} />
+                  <button onClick={() => removeSet(exIdx, setIdx)} aria-label="Remove set" style={{ background:"transparent", border:`1px solid ${C.border}`, color:C.gray, width:26, height:26, borderRadius:5, cursor:"pointer", fontSize:12, lineHeight:1 }}>×</button>
+                </div>
+              ))}
+              <button onClick={() => addSet(exIdx)} style={{ width:"100%", marginTop:4, padding:"6px", background:"transparent", border:`1px dashed ${C.border}`, color:C.teal, borderRadius:6, fontFamily:F.mono, fontSize:10, letterSpacing:1, cursor:"pointer" }}>+ ADD SET</button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:12, lineHeight:1.4 }}>
+          Empty sets (no weight + no reps) are dropped on save. Volume + set count rebuild from what's left.
+        </div>
+        <div style={{ display:"flex", gap:8, marginTop:14, position:"sticky", bottom:0, background:C.surface, paddingTop:8 }}>
           <button onClick={onClose} style={{ flex:1, padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>CANCEL</button>
           <button onClick={save} style={{ flex:1, padding:"10px", background:C.teal, border:"none", color:C.white, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>SAVE</button>
         </div>
