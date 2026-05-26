@@ -4425,6 +4425,48 @@ function CoachChat({ data }) {
 }
 
 // ── COACH Tab ─────────────────────────────────────────────────────
+// ── Import Backup card (restore a downloaded backup JSON into this device) ──
+function ImportBackupCard() {
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function onFile(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!window.confirm("Import this backup? It REPLACES the data currently on this device.")) {
+      e.target.value = ""; return;
+    }
+    setBusy(true); setStatus("Reading file...");
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      setStatus("Writing data...");
+      await importBackup(backup);
+      setStatus("Imported — reloading...");
+      setTimeout(() => window.location.reload(), 900);
+    } catch (err) {
+      setStatus("Import failed: " + ((err && err.message) || "unreadable file"));
+      setBusy(false);
+      e.target.value = "";
+    }
+  }
+  return (
+    <div style={{ background:C.surface, border:`1px solid ${C.teal}40`, borderRadius:16, padding:16, marginBottom:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+        <div style={{ fontSize:18 }}>📤</div>
+        <SL>Import Backup</SL>
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.5, marginBottom:10 }}>
+        Load a DIALLED IN backup .json (e.g. exported from the old artifact) onto this device. Replaces current data.
+      </div>
+      <label style={{ display:"block", width:"100%", boxSizing:"border-box", padding:"12px", borderRadius:10, textAlign:"center", fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, background: busy ? "#1A1A22" : C.teal, color: busy ? C.gray : C.white, cursor: busy ? "default" : "pointer" }}>
+        {busy ? "WORKING..." : "CHOOSE BACKUP FILE"}
+        <input type="file" accept="application/json,.json" onChange={onFile} disabled={busy} style={{ display:"none" }} />
+      </label>
+      {status && <div style={{ fontFamily:F.mono, fontSize:10, color: status.indexOf("failed") >= 0 ? C.orange : C.lime, marginTop:10 }}>{status}</div>}
+    </div>
+  );
+}
+
 // ── API Key settings card (lives in COACH tab) ──
 function ApiKeyCard() {
   const [key, setKey] = useState("");
