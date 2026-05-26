@@ -4209,12 +4209,15 @@ function CoachChat({ data }) {
     load();
   }, []);
 
-  // Scroll to bottom on NEW messages only; skip initial mount, use block:nearest so it
-  // doesn't yank the whole page (which was leaving COACH parked in empty padding below).
-  const didMountRef = React.useRef(false);
+  // Only scroll when the message COUNT grows (i.e. a user/coach message was actually
+  // added). Skipping based on first mount alone wasn't enough because `messages` updates
+  // twice: once with the empty initial state, then again when storage load hydrates it.
+  // We also use block:"nearest" so even legitimate scrolls don't yank the whole page.
+  const prevLenRef = React.useRef(null);
   useEffect(() => {
-    if (!didMountRef.current) { didMountRef.current = true; return; }
-    if (messagesEndRef.current) {
+    const prev = prevLenRef.current;
+    prevLenRef.current = messages.length;
+    if (prev !== null && messages.length > prev && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
     }
   }, [messages]);
