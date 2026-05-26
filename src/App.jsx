@@ -4209,18 +4209,17 @@ function CoachChat({ data }) {
     load();
   }, []);
 
-  // Only scroll when the message COUNT grows (i.e. a user/coach message was actually
-  // added). Skipping based on first mount alone wasn't enough because `messages` updates
-  // twice: once with the empty initial state, then again when storage load hydrates it.
-  // We also use block:"nearest" so even legitimate scrolls don't yank the whole page.
-  const prevLenRef = React.useRef(null);
-  useEffect(() => {
-    const prev = prevLenRef.current;
-    prevLenRef.current = messages.length;
-    if (prev !== null && messages.length > prev && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
-    }
-  }, [messages]);
+  // Scroll the chat to the latest message — called EXPLICITLY after real user
+  // actions (send / receive / error). Not driven by useEffect on [messages], because
+  // that fires on hydration (welcome message + history load) and was yanking the page
+  // on every COACH tab open. block:"nearest" keeps it minimal even for real scrolls.
+  function scrollChatToEnd() {
+    setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior:"smooth", block:"nearest" });
+      }
+    }, 50);
+  }
 
   async function saveHistory(msgs) {
     try {
@@ -4233,6 +4232,7 @@ function CoachChat({ data }) {
     const userMsg = { role:"user", content:input.trim(), timestamp:getToday() };
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
+    scrollChatToEnd();
     setInput("");
     setLoading(true);
 
@@ -4262,11 +4262,13 @@ function CoachChat({ data }) {
       const assistantMsg = { role:"assistant", content:text, timestamp:getToday() };
       const updated = [...newMessages, assistantMsg];
       setMessages(updated);
+      scrollChatToEnd();
       await saveHistory(updated);
     } catch (e) {
       const errMsg = { role:"assistant", content:"Connection error — check your network and try again.", timestamp:getToday() };
       const updated = [...newMessages, errMsg];
       setMessages(updated);
+      scrollChatToEnd();
     }
     setLoading(false);
   }
