@@ -624,6 +624,58 @@ function generateDailySummary(data) {
   return lines.join(" ");
 }
 
+// ── Adaptive nudges (V2.0 MVP coach engine) ──────────────────────
+// Three rule-based signals; surface up to 3 as actionable cards on HOME.
+// These are the first crumbs of the long-term adaptive trainer engine.
+function computeAdaptiveNudges(data) {
+  const out = [];
+  const today = getToday();
+
+  // Rule 1 — weight trend out of ideal lean-bulk pace (0.3-0.6 lb/wk)
+  const weights = (data.weightLog || []).filter(w => w.weight).slice(-14);
+  if (weights.length >= 5) {
+    const first = weights[0], last = weights[weights.length - 1];
+    const days = (new Date(last.date) - new Date(first.date)) / 86400000;
+    if (days >= 7) {
+      const lbPerWk = (last.weight - first.weight) / days * 7;
+      if (lbPerWk > 0.7) out.push({ priority:"high", icon:"⚖️", title:"Bulking too fast", text:`Gaining ${lbPerWk.toFixed(2)} lb/wk — outside the 0.3-0.6 lb/wk ideal. Consider trimming ~200 kcal off the training-day target to keep the gain leaner.` });
+      else if (lbPerWk >= 0 && lbPerWk < 0.15) out.push({ priority:"medium", icon:"⚖️", title:"Weight stalled", text:`Trend is ${lbPerWk.toFixed(2)} lb/wk over the last ${weights.length} weigh-ins — bulk has stalled. Add ~150 kcal to push it forward.` });
+      else if (lbPerWk < 0) out.push({ priority:"high", icon:"⚖️", title:"Losing weight on a bulk", text:`Weight is trending down (${lbPerWk.toFixed(2)} lb/wk) on what's supposed to be a lean bulk. Add 200-250 kcal — protein priority.` });
+    }
+  }
+
+  // Rule 2 — PR stall on key lifts (estimated 1RM not improving over last 3 sessions)
+  const keyLifts = ["Incline Bench", "Romanian Deadlift", "Shoulder Press"];
+  for (const name of keyLifts) {
+    const prog = progressionFor(data.workouts, name);
+    if (prog.length >= 3) {
+      const last3 = prog.slice(-3);
+      const gain = last3[2].oneRM - last3[0].oneRM;
+      if (gain <= 0) {
+        out.push({ priority:"high", icon:"🏋️", title:`${name} stalled`, text:`Estimated 1RM hasn't moved across the last 3 sessions. Consider a deload week — reduce volume 30%, then build back. Or check sleep/fuel — recovery often gates strength.` });
+        break; // surface only one PR-stall at a time to avoid noise
+      }
+    }
+  }
+
+  // Rule 3 — missed sessions this week
+  const todayDate = new Date(today + "T12:00:00");
+  const dow = todayDate.getDay();
+  const startOfWeek = new Date(todayDate);
+  startOfWeek.setDate(todayDate.getDate() - ((dow + 6) % 7));
+  const startStr = toLocalDateStr(startOfWeek);
+  const thisWeekWorkouts = (data.workouts || []).filter(w => w.date >= startStr && w.date <= today);
+  let daysDuePassed = 0;
+  for (let i = 0; i <= ((dow + 6) % 7); i++) {
+    const d = new Date(startOfWeek); d.setDate(startOfWeek.getDate() + i);
+    if (SPLIT_MAP[DAYS[d.getDay()]]) daysDuePassed++;
+  }
+  const missed = daysDuePassed - thisWeekWorkouts.length;
+  if (missed >= 2) out.push({ priority:"medium", icon:"📅", title:"Sessions missed this week", text:`${missed} prescribed training days haven't been logged this week. Is life getting in the way, or is the program off? Worth a moment of honest reflection.` });
+
+  return out;
+}
+
 function todayOneAction(data) {
   const today = getToday();
   const dayName = DAYS[new Date().getDay()];
@@ -2668,6 +2720,29 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
         else if (act === "meal") onLogMeal && onLogMeal();
         else if (act === "lifts") onAction && onAction("lifts_tab");
       }} />
+
+      {/* V2.0 — Adaptive coach nudges (rule-based MVP) */}
+      {(() => {
+        const nudges = computeAdaptiveNudges(data);
+        if (nudges.length === 0) return null;
+        return (
+          <div style={{ marginBottom:14 }}>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:6, padding:"0 2px" }}>🧠 COACH SAYS</div>
+            {nudges.map((n, i) => {
+              const accent = n.priority === "high" ? C.orange : n.priority === "medium" ? C.amber : C.teal;
+              return (
+                <div key={i} style={{ background:C.surface, border:`1px solid ${accent}60`, borderLeft:`3px solid ${accent}`, borderRadius:10, padding:"10px 12px", marginBottom:6, display:"flex", gap:10 }}>
+                  <div style={{ fontSize:18, lineHeight:1.2 }}>{n.icon}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontFamily:F.mono, fontSize:11, color:accent, fontWeight:700, letterSpacing:0.3, marginBottom:3 }}>{n.title}</div>
+                    <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayLight, lineHeight:1.5 }}>{n.text}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Backup Nag Banner */}
       <BackupNagBanner />
