@@ -1246,7 +1246,7 @@ function Card({ children, style, highlight, ...rest }) {
       background: C.surface,
       border: `1px solid ${highlight ? C.lime : C.border}`,
       borderRadius: 16,
-      padding: 16,
+      padding: 18,
       marginBottom: 12,
       ...style,
     }} {...rest}>
@@ -1259,7 +1259,7 @@ function SL({ children, color }) {
   return (
     <div style={{
       fontFamily: F.mono,
-      fontSize: 10,
+      fontSize: 11,
       color: color || C.gray,
       textTransform: "uppercase",
       letterSpacing: 1.5,
@@ -3068,15 +3068,15 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
         if (nudges.length === 0) return null;
         return (
           <div style={{ marginBottom:14 }}>
-            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:6, padding:"0 2px" }}>🧠 COACH SAYS</div>
+            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:6, padding:"0 2px" }}>🧠 COACH SAYS</div>
             {nudges.map((n, i) => {
               const accent = n.priority === "high" ? C.orange : n.priority === "medium" ? C.amber : C.teal;
               return (
-                <div key={i} style={{ background:C.surface, border:`1px solid ${accent}60`, borderLeft:`3px solid ${accent}`, borderRadius:10, padding:"10px 12px", marginBottom:6, display:"flex", gap:10 }}>
+                <div key={i} style={{ background:C.surface, border:`1px solid ${accent}60`, borderLeft:`3px solid ${accent}`, borderRadius:10, padding:"12px 14px", marginBottom:8, display:"flex", gap:10 }}>
                   <div style={{ fontSize:18, lineHeight:1.2 }}>{n.icon}</div>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontFamily:F.mono, fontSize:11, color:accent, fontWeight:700, letterSpacing:0.3, marginBottom:3 }}>{n.title}</div>
-                    <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayLight, lineHeight:1.5 }}>{n.text}</div>
+                    <div style={{ fontFamily:F.mono, fontSize:13, color:accent, fontWeight:700, letterSpacing:0.3, marginBottom:4 }}>{n.title}</div>
+                    <div style={{ fontFamily:F.mono, fontSize:12, color:C.grayLight, lineHeight:1.5 }}>{n.text}</div>
                   </div>
                 </div>
               );
@@ -3095,7 +3095,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
               <div>
                 <div style={{ fontFamily:F.mono, fontSize:10, color:scoreColor, textTransform:"uppercase", letterSpacing:1.5 }}>Daily Checklist</div>
-                <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>{incomplete.length} item{incomplete.length !== 1 ? "s" : ""} to fill in</div>
+                <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:2 }}>{incomplete.length} item{incomplete.length !== 1 ? "s" : ""} to fill in</div>
               </div>
             </div>
             {/* Mini ring */}
@@ -3112,8 +3112,8 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
             <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 0", borderTop:`1px solid ${C.border}` }}>
               <div style={{ width:18, height:18, borderRadius:5, border:`1.5px solid ${C.border}`, background:"transparent", flexShrink:0 }} />
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:12, color:C.white }}>{item.label}</div>
-                <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:1 }}>{item.hint}</div>
+                <div style={{ fontSize:14, color:C.white }}>{item.label}</div>
+                <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:2 }}>{item.hint}</div>
               </div>
               <button
                 onClick={() => onAction && onAction(item.action)}
@@ -3124,7 +3124,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
             </div>
           ))}
           {incomplete.length > 3 && (
-            <button onClick={() => setShowAll(s => !s)} style={{ width:"100%", marginTop:8, background:"none", border:"none", fontFamily:F.mono, fontSize:9, color:C.gray, cursor:"pointer", paddingTop:6, borderTop:`1px solid ${C.border}` }}>
+            <button onClick={() => setShowAll(s => !s)} style={{ width:"100%", marginTop:8, background:"none", border:"none", fontFamily:F.mono, fontSize:10, color:C.gray, cursor:"pointer", paddingTop:6, borderTop:`1px solid ${C.border}` }}>
               {showAll ? "SHOW LESS ↑" : `+ ${incomplete.length - 3} MORE ITEMS ↓`}
             </button>
           )}
@@ -3137,7 +3137,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
           <div style={{ fontSize:24 }}>✅</div>
           <div>
             <div style={{ fontFamily:F.mono, fontSize:11, color:C.lime }}>All caught up — 100% complete</div>
-            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>Coach has everything it needs to track your progress</div>
+            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:2 }}>Coach has everything it needs to track your progress</div>
           </div>
         </div>
       )}
@@ -3145,7 +3145,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
         <Card style={{ cursor:"pointer" }} onClick={onLogWeight}>
           <SL>Weight</SL>
           <BigN unit="lbs">{currentW}</BigN>
-          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:6 }}>Target → 185–195</div>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:6 }}>Target → 185–195</div>
         </Card>
         <Card
           style={{
@@ -3159,7 +3159,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
           <BigN unit="hrs" color={lastSleep >= 8 ? C.lime : lastSleep >= 7 ? C.white : C.orange}>
             {lastSleep || "—"}
           </BigN>
-          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:6 }}>Target → 8 hrs</div>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:6 }}>Target → 8 hrs</div>
         </Card>
       </div>
 
@@ -3167,12 +3167,12 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
         <SL>{todayWo ? "⚡ Today's Session" : "🧘 Today"}</SL>
         <BigN color={todayWo ? woColor : C.gray} size={36}>{todayWo || "REST DAY"}</BigN>
         {todayWo && (
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayMid, marginTop:6 }}>
+          <div style={{ fontFamily:F.mono, fontSize:12, color:C.grayMid, marginTop:6 }}>
             {WORKOUTS[todayWo]?.focus} · {WORKOUTS[todayWo]?.duration}
           </div>
         )}
         {isRest && (
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:6 }}>
+          <div style={{ fontFamily:F.mono, fontSize:12, color:C.gray, marginTop:6 }}>
             Next → {(() => {
               const dIdx = new Date().getDay();
               const up = [1,2,4,5].find(d => d > dIdx) || 1;
@@ -3195,15 +3195,15 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
           <div style={{ display:"flex", gap:20 }}>
             <div style={{ textAlign:"center" }}>
               <div style={{ fontFamily:F.mono, fontSize:17, fontWeight:600, color:C.teal }}>{lastWo.duration}m</div>
-              <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>DURATION</div>
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:4 }}>DURATION</div>
             </div>
             <div style={{ textAlign:"center" }}>
               <div style={{ fontFamily:F.mono, fontSize:17, fontWeight:600, color:C.white }}>{(lastWo.volume / 1000).toFixed(1)}k</div>
-              <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>VOLUME</div>
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:4 }}>VOLUME</div>
             </div>
             <div style={{ textAlign:"center" }}>
               <div style={{ fontFamily:F.mono, fontSize:17, fontWeight:600, color:C.white }}>{lastWo.sets}</div>
-              <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>SETS</div>
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:4 }}>SETS</div>
             </div>
           </div>
         </Card>
@@ -3215,13 +3215,13 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
           <div style={{ fontFamily:F.mono, fontSize:12, color:C.white }}>May – Aug 2026</div>
           <Tag color={C.blue}>ACTIVE</Tag>
         </div>
-        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, lineHeight:1.8 }}>
+        <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, lineHeight:1.8 }}>
           175.8 → 182 lbs · Fix chest &amp; shoulders · Build consistency
         </div>
         <div style={{ marginTop:10, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
           <div style={{ height:"100%", width:"8%", background:C.blue, borderRadius:2 }} />
         </div>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>Week 1 of 16</div>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:4 }}>Week 1 of 16</div>
       </Card>
     </div>
   );
@@ -7489,83 +7489,393 @@ function PhotoViewerModal({ photo, type, onClose, onDelete, onUpdate }) {
 }
 
 
-// ── FuelTab (V2.2 Chunk A scaffold — full nutrition hub in Chunks B-E) ──
-function FuelTab({ data, onLogMeal }) {
-  return (
-    <div style={{ padding:"18px 16px" }}>
-      <div style={{ marginBottom:20 }}>
-        <div style={{ fontFamily:F.display, fontSize:22, color:C.lime, letterSpacing:2 }}>FUEL</div>
-        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>nutrition · macros · meal plans</div>
-      </div>
+// ── FuelTab (V2.2 Chunk B — full nutrition hub) ─────────────────────────────
+function FuelTab({ data, updateData, onLogMeal }) {
+  const [view, setView]               = useState("today");   // "today" | "history"
+  const [histRange, setHistRange]     = useState(7);          // 7 | 30
+  const [microExpanded, setMicroExpanded] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);       // {date, idx, item}
+  const [expandedDay, setExpandedDay] = useState(null);       // date string in history
 
-      {/* Today's macro summary */}
-      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
-        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:14 }}>TODAY'S NUTRITION</div>
-        {(() => {
-          const t = getToday();
-          const m = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
-          const macros = [
-            { label:"KCAL",    val:Math.round(m.calories), target:data.profile && data.profile.calorieTarget ? data.profile.calorieTarget.training : 3200, color:C.lime },
-            { label:"PROTEIN", val:Math.round(m.protein),  target:data.profile ? data.profile.proteinTarget || 240 : 240, color:C.teal },
-            { label:"CARBS",   val:Math.round(m.carbs),    target:data.profile ? data.profile.carbTarget || 320 : 320,    color:C.orange },
-            { label:"FAT",     val:Math.round(m.fat),      target:data.profile ? data.profile.fatTarget || 85 : 85,       color:C.purple },
-          ];
-          return (
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10 }}>
-              {macros.map(function(mac) {
-                const pct = Math.min(100, Math.round((mac.val / mac.target) * 100));
-                return (
-                  <div key={mac.label} style={{ textAlign:"center" }}>
-                    <div style={{ fontFamily:F.display, fontSize:20, color:mac.color }}>{mac.val}</div>
-                    <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginBottom:5 }}>{mac.label}</div>
-                    <div style={{ height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
-                      <div style={{ height:"100%", width:pct+"%", background:mac.color, borderRadius:2 }} />
+  const t = getToday();
+  const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
+  const todayItems = todayMeals.items || [];
+
+  const calTarget  = data.profile?.calorieTarget?.training || 3200;
+  const protTarget = data.profile?.proteinTarget            || 240;
+  const carbTarget = data.profile?.carbTarget               || 320;
+  const fatTarget  = data.profile?.fatTarget                ||  85;
+
+  // ── helpers ──────────────────────────────────────────────────────
+  async function deleteMealItem(date, idx) {
+    const day   = data.meals[date] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
+    const items = (day.items || []).filter((_, i) => i !== idx);
+    const tot   = items.reduce((s, it) => typeof it === "object"
+      ? { calories: s.calories+(it.calories||0), protein: s.protein+(it.protein||0),
+          carbs: s.carbs+(it.carbs||0), fat: s.fat+(it.fat||0) }
+      : s, { calories:0, protein:0, carbs:0, fat:0 });
+    await updateData("meals", { ...data.meals, [date]: { ...day, ...tot, items } });
+  }
+
+  async function saveItemEdit(date, idx, patch) {
+    const day   = data.meals[date] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
+    const items = (day.items || []).map((it, i) => i === idx ? { ...it, ...patch } : it);
+    const tot   = items.reduce((s, it) => typeof it === "object"
+      ? { calories: s.calories+(it.calories||0), protein: s.protein+(it.protein||0),
+          carbs: s.carbs+(it.carbs||0), fat: s.fat+(it.fat||0) }
+      : s, { calories:0, protein:0, carbs:0, fat:0 });
+    await updateData("meals", { ...data.meals, [date]: { ...day, ...tot, items } });
+    setEditingItem(null);
+  }
+
+  // ── last N days ──────────────────────────────────────────────────
+  function lastNDays(n) {
+    return Array.from({ length: n }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      return toLocalDateStr(d);
+    });
+  }
+
+  // ── macro bar row ─────────────────────────────────────────────────
+  function MacroRow({ label, val, target, color, unit }) {
+    const pct = Math.min(100, Math.round((val / target) * 100));
+    const over = val > target;
+    return (
+      <div style={{ marginBottom:10 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+          <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
+            <span style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1 }}>{label}</span>
+            <span style={{ fontFamily:F.display, fontSize:22, color: over ? C.orange : color }}>{Math.round(val)}</span>
+            <span style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{unit || "g"}</span>
+          </div>
+          <div style={{ display:"flex", alignItems:"baseline", gap:4 }}>
+            <span style={{ fontFamily:F.mono, fontSize:11, color:over?C.orange:color, fontWeight:700 }}>{pct}%</span>
+            <span style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>/ {target}{unit||"g"}</span>
+          </div>
+        </div>
+        <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
+          <div style={{ height:"100%", width:pct+"%", background: over ? C.orange : color, borderRadius:3, transition:"width .5s ease" }} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── today view ────────────────────────────────────────────────────
+  function TodayView() {
+    return (
+      <div>
+        {/* Macro summary */}
+        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:16, padding:18, marginBottom:12 }}>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:14 }}>TODAY'S MACROS</div>
+          <MacroRow label="KCAL"    val={todayMeals.calories} target={calTarget}  color={C.lime}   unit="kcal" />
+          <MacroRow label="PROTEIN" val={todayMeals.protein}  target={protTarget} color={C.teal}   />
+          <MacroRow label="CARBS"   val={todayMeals.carbs}    target={carbTarget} color={C.orange} />
+          <MacroRow label="FAT"     val={todayMeals.fat}      target={fatTarget}  color={C.purple} />
+        </div>
+
+        {/* Micro breakdown — expandable */}
+        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, marginBottom:12, overflow:"hidden" }}>
+          <button onClick={() => setMicroExpanded(e => !e)}
+            style={{ width:"100%", padding:"13px 16px", background:"none", border:"none", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <span style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5 }}>MICROS</span>
+            <span style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>{microExpanded ? "▲" : "▼"}</span>
+          </button>
+          {microExpanded && (
+            <div style={{ padding:"0 16px 14px" }}>
+              {(() => {
+                // Sum micros across items that carry them
+                const totals = { fiber:0, sugar:0, sodium:0, potassium:0, vitaminD:0, calcium:0, iron:0, zinc:0 };
+                let hasMicros = false;
+                todayItems.forEach(function(item) {
+                  if (typeof item === "object" && item.micros) {
+                    hasMicros = true;
+                    Object.keys(totals).forEach(function(k) { totals[k] += (item.micros[k] || 0); });
+                  }
+                });
+                if (!hasMicros) return (
+                  <div style={{ textAlign:"center", padding:"12px 0 4px" }}>
+                    <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:4 }}>No micro data yet</div>
+                    <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, opacity:0.6, lineHeight:1.5 }}>
+                      Use the AI meal scan or photo log to<br/>auto-populate fiber, sodium, vitamins &amp; more
                     </div>
-                    <div style={{ fontFamily:F.mono, fontSize:7, color:mac.color, opacity:0.6, marginTop:2 }}>{pct}%</div>
                   </div>
                 );
-              })}
+                const rows = [
+                  { label:"Fiber",    val:totals.fiber,     unit:"g",  dv:28,   color:C.teal },
+                  { label:"Sugar",    val:totals.sugar,     unit:"g",  dv:50,   color:C.amber },
+                  { label:"Sodium",   val:totals.sodium,    unit:"mg", dv:2300, color:C.orange },
+                  { label:"Potassium",val:totals.potassium, unit:"mg", dv:3500, color:C.lime },
+                  { label:"Vit D",    val:totals.vitaminD,  unit:"IU", dv:600,  color:C.teal },
+                  { label:"Calcium",  val:totals.calcium,   unit:"mg", dv:1000, color:C.white },
+                  { label:"Iron",     val:totals.iron,      unit:"mg", dv:8,    color:C.orange },
+                  { label:"Zinc",     val:totals.zinc,      unit:"mg", dv:11,   color:C.purple },
+                ];
+                return (
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
+                    {rows.map(function(r) {
+                      const pct = Math.min(100, Math.round((r.val / r.dv) * 100));
+                      return (
+                        <div key={r.label}>
+                          <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+                            <span style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{r.label}</span>
+                            <span style={{ fontFamily:F.mono, fontSize:11, color:r.color }}>{Math.round(r.val)}{r.unit}</span>
+                          </div>
+                          <div style={{ height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                            <div style={{ height:"100%", width:pct+"%", background:r.color, borderRadius:2 }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
-          );
-        })()}
-      </div>
+          )}
+        </div>
 
-      {/* Log meal CTA */}
-      <button onClick={onLogMeal} style={{ width:"100%", padding:"14px", background:"rgba(200,255,0,0.08)", border:"1px solid rgba(200,255,0,0.4)", borderRadius:12, fontFamily:F.mono, fontSize:12, color:C.lime, cursor:"pointer", letterSpacing:1, fontWeight:700, marginBottom:12 }}>
-        + LOG MEAL
-      </button>
+        {/* Log meal CTA */}
+        <button onClick={onLogMeal} style={{ width:"100%", padding:"15px", background:"rgba(200,255,0,0.08)", border:"1px solid rgba(200,255,0,0.4)", borderRadius:12, fontFamily:F.mono, fontSize:13, color:C.lime, cursor:"pointer", letterSpacing:1, fontWeight:700, marginBottom:12 }}>
+          + LOG MEAL
+        </button>
 
-      {/* Today's meal items */}
-      {(() => {
-        const t = getToday();
-        const items = (data.meals[t] || {}).items || [];
-        if (!items.length) return (
-          <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:12, padding:"22px 16px", textAlign:"center" }}>
-            <div style={{ fontSize:30, marginBottom:8 }}>{'🍽️'}</div>
-            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>No meals logged today</div>
-            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, opacity:0.6, marginTop:4 }}>Tap + LOG MEAL to start tracking</div>
+        {/* Today's meal items */}
+        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, overflow:"hidden" }}>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, padding:"12px 16px 10px" }}>
+            {"TODAY'S MEALS"}
+            {todayItems.length > 0 && (
+              <span style={{ color:C.border, marginLeft:6 }}>— {todayItems.length} item{todayItems.length!==1?"s":""}</span>
+            )}
           </div>
-        );
-        return (
-          <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:12, overflow:"hidden" }}>
-            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1.5, padding:"11px 14px 8px" }}>{"TODAY'S MEALS — "+items.length+" item"+(items.length!==1?"s":"")}</div>
-            {items.map(function(item, i) {
+          {todayItems.length === 0 ? (
+            <div style={{ padding:"20px 16px", textAlign:"center" }}>
+              <div style={{ fontSize:28, marginBottom:6 }}>{"🍽️"}</div>
+              <div style={{ fontFamily:F.mono, fontSize:12, color:C.gray }}>Nothing logged yet today</div>
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, opacity:0.6, marginTop:3 }}>Tap + LOG MEAL to start</div>
+            </div>
+          ) : (
+            todayItems.map(function(item, i) {
+              const name = typeof item === "string" ? item : (item.name || "Meal");
+              const kcal = typeof item === "object" ? Math.round(item.calories||0) : null;
+              const prot = typeof item === "object" ? Math.round(item.protein||0) : null;
+              const carb = typeof item === "object" ? Math.round(item.carbs||0)   : null;
+              const fat  = typeof item === "object" ? Math.round(item.fat||0)     : null;
               return (
-                <div key={i} style={{ padding:"10px 14px", borderTop:"1px solid "+C.border, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div style={{ fontFamily:F.body, fontSize:13, color:C.white, flex:1, marginRight:8 }}>{item.name || item.description || "Meal"}</div>
-                  <div style={{ fontFamily:F.mono, fontSize:11, color:C.lime, flexShrink:0 }}>{Math.round(item.calories||0)} kcal</div>
+                <div key={i} style={{ borderTop:"1px solid "+C.border, padding:"11px 14px" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, color:C.white, marginBottom:kcal!=null?3:0, fontWeight:500 }}>{name}</div>
+                      {kcal != null && (
+                        <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>
+                          <span style={{ color:C.lime, fontWeight:700 }}>{kcal} kcal</span>
+                          {prot!=null && <span>{"  "}{prot}P · {carb}C · {fat}F</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                      {typeof item === "object" && (
+                        <button onClick={() => setEditingItem({ date:t, idx:i, item })}
+                          style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:F.mono, fontSize:10, color:C.gray }}>
+                          ✏️
+                        </button>
+                      )}
+                      <button onClick={() => deleteMealItem(t, i)}
+                        style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:F.mono, fontSize:10, color:C.orange }}>
+                        🗑
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── history view ──────────────────────────────────────────────────
+  function HistoryView() {
+    const days = lastNDays(histRange);
+    const chartData = days.slice().reverse().map(function(date) {
+      const d = data.meals[date];
+      const label = date.slice(5); // "MM-DD"
+      return { date, label, kcal: d ? Math.round(d.calories) : 0 };
+    });
+    const maxKcal = Math.max(calTarget * 1.2, ...chartData.map(function(d) { return d.kcal; }));
+
+    return (
+      <div>
+        {/* Range toggle */}
+        <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+          {[7,30].map(function(n) {
+            const active = histRange === n;
+            return (
+              <button key={n} onClick={() => setHistRange(n)}
+                style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:11, color:active?C.lime:C.gray, cursor:"pointer" }}>
+                {n === 7 ? "7 DAYS" : "30 DAYS"}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Bar chart */}
+        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"16px 10px 10px", marginBottom:12 }}>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:12, paddingLeft:6 }}>
+            KCAL / DAY
+            <span style={{ color:C.border, marginLeft:8, fontSize:10 }}>— — target {calTarget}</span>
+          </div>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={chartData} barCategoryGap="20%">
+              <XAxis dataKey="label" tick={{ fontFamily:"monospace", fontSize:9, fill:C.gray }} axisLine={false} tickLine={false} />
+              <Tooltip
+                contentStyle={{ background:C.bg, border:"1px solid "+C.border, borderRadius:8, fontFamily:"monospace", fontSize:11 }}
+                formatter={function(val) { return [val+" kcal", "Calories"]; }}
+                labelStyle={{ color:C.gray }}
+              />
+              <ReferenceLine y={calTarget} stroke={C.lime} strokeDasharray="4 4" strokeWidth={1} />
+              <Bar dataKey="kcal" fill={C.teal} radius={[3,3,0,0]}
+                cell={chartData.map(function(d, i) {
+                  return React.createElement("cell", { key: i, fill: d.kcal >= calTarget ? C.lime : d.kcal >= calTarget*0.8 ? C.teal : C.border });
+                })}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Day-by-day list */}
+        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, overflow:"hidden" }}>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, padding:"12px 16px 10px" }}>DAILY LOG</div>
+          {days.map(function(date) {
+            const d = data.meals[date];
+            const kcal    = d ? Math.round(d.calories) : 0;
+            const protein = d ? Math.round(d.protein)  : 0;
+            const items   = d ? (d.items || []) : [];
+            const isToday = date === t;
+            const isYest  = (() => { const y = new Date(); y.setDate(y.getDate()-1); return date === toLocalDateStr(y); })();
+            const label   = isToday ? "TODAY" : isYest ? "YESTERDAY" : date.slice(5);
+            const pct     = Math.min(100, Math.round((kcal / calTarget) * 100));
+            const expanded = expandedDay === date;
+
+            return (
+              <div key={date} style={{ borderTop:"1px solid "+C.border }}>
+                <button onClick={() => setExpandedDay(expanded ? null : date)}
+                  style={{ width:"100%", padding:"11px 14px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:10, textAlign:"left" }}>
+                  <div style={{ fontFamily:F.mono, fontSize:11, color:isToday?C.lime:C.gray, width:80, flexShrink:0 }}>{label}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ height:4, background:C.border, borderRadius:2, overflow:"hidden", marginBottom:3 }}>
+                      <div style={{ height:"100%", width:pct+"%", background:kcal>=calTarget?C.lime:C.teal, borderRadius:2 }} />
+                    </div>
+                    <div style={{ fontFamily:F.mono, fontSize:11, color:C.white }}>
+                      <span style={{ color:kcal>=calTarget?C.lime:C.white, fontWeight:kcal>0?700:400 }}>{kcal > 0 ? kcal+" kcal" : "—"}</span>
+                      {protein > 0 && <span style={{ color:C.gray, marginLeft:8 }}>· {protein}g P</span>}
+                    </div>
+                  </div>
+                  <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{expanded?"▲":"▼"}</div>
+                </button>
+                {expanded && (
+                  <div style={{ padding:"0 14px 12px" }}>
+                    {items.length === 0 ? (
+                      <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, padding:"6px 0" }}>No items logged</div>
+                    ) : (
+                      items.map(function(item, i) {
+                        const nm  = typeof item === "string" ? item : (item.name || "Meal");
+                        const kc  = typeof item === "object" ? Math.round(item.calories||0) : null;
+                        const pr  = typeof item === "object" ? Math.round(item.protein||0)  : null;
+                        const cr  = typeof item === "object" ? Math.round(item.carbs||0)    : null;
+                        const fa  = typeof item === "object" ? Math.round(item.fat||0)      : null;
+                        return (
+                          <div key={i} style={{ padding:"8px 0", borderTop:i===0?"none":"1px solid "+C.border, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:13, color:C.white, marginBottom:kc!=null?2:0 }}>{nm}</div>
+                              {kc != null && (
+                                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>
+                                  <span style={{ color:C.lime }}>{kc} kcal</span>
+                                  {pr!=null && <span>{"  "}{pr}P · {cr}C · {fa}F</span>}
+                                </div>
+                              )}
+                            </div>
+                            <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                              {typeof item === "object" && (
+                                <button onClick={() => setEditingItem({ date, idx:i, item })}
+                                  style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:9, color:C.gray }}>✏️</button>
+                              )}
+                              <button onClick={() => deleteMealItem(date, i)}
+                                style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:9, color:C.orange }}>🗑</button>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── inline item edit sheet ────────────────────────────────────────
+  function ItemEditSheet() {
+    const orig = editingItem.item;
+    const [kcal, setKcal] = useState(String(Math.round(orig.calories||0)));
+    const [prot, setProt] = useState(String(Math.round(orig.protein||0)));
+    const [carb, setCarb] = useState(String(Math.round(orig.carbs||0)));
+    const [fat,  setFat]  = useState(String(Math.round(orig.fat||0)));
+    const inputStyle = { background:"#1A1A22", border:"1px solid "+C.border, borderRadius:8, padding:"10px 12px", fontFamily:F.mono, fontSize:15, color:C.white, width:"100%", boxSizing:"border-box", outline:"none", textAlign:"right" };
+    return (
+      <div style={{ position:"fixed", inset:0, zIndex:600, display:"flex", flexDirection:"column" }}>
+        <div onClick={() => setEditingItem(null)} style={{ flex:1, background:"rgba(0,0,0,0.72)" }} />
+        <div style={{ background:C.bg, borderTop:"2px solid "+C.border, borderRadius:"18px 18px 0 0", padding:"18px 16px 30px", maxWidth:480, width:"100%", margin:"0 auto" }}>
+          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>EDIT MEAL ITEM</div>
+          <div style={{ fontSize:14, color:C.white, marginBottom:16, fontWeight:500 }}>{orig.name || "Meal"}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+            {[["KCAL", kcal, setKcal], ["PROTEIN g", prot, setProt], ["CARBS g", carb, setCarb], ["FAT g", fat, setFat]].map(function(row) {
+              return (
+                <div key={row[0]}>
+                  <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1, marginBottom:5 }}>{row[0]}</div>
+                  <input type="number" value={row[1]} onChange={function(e) { row[2](e.target.value); }}
+                    style={inputStyle} />
                 </div>
               );
             })}
           </div>
-        );
-      })()}
-
-      {/* Meal plans placeholder — V2.2 Chunk D */}
-      <div style={{ background:C.surfaceAlt, border:"1px dashed "+C.border, borderRadius:12, padding:"14px 16px", marginTop:12, textAlign:"center" }}>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1 }}>MEAL PLANS & MICRO TRACKING — COMING SOON</div>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, opacity:0.5, marginTop:4 }}>Save templates · AI weekly plans · Full micro breakdown</div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={() => setEditingItem(null)} style={{ flex:1, padding:"12px", background:C.surface, border:"1px solid "+C.border, borderRadius:10, fontFamily:F.mono, fontSize:12, color:C.gray, cursor:"pointer" }}>CANCEL</button>
+            <button onClick={() => saveItemEdit(editingItem.date, editingItem.idx, { calories:parseFloat(kcal)||0, protein:parseFloat(prot)||0, carbs:parseFloat(carb)||0, fat:parseFloat(fat)||0 })}
+              style={{ flex:2, padding:"12px", background:C.lime, border:"none", borderRadius:10, fontFamily:F.mono, fontSize:12, color:C.dark, cursor:"pointer", fontWeight:700, letterSpacing:1 }}>SAVE</button>
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  // ── render ────────────────────────────────────────────────────────
+  return (
+    <div style={{ padding:"18px 16px" }}>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:16 }}>
+        <div>
+          <div style={{ fontFamily:F.display, fontSize:24, color:C.lime, letterSpacing:2 }}>FUEL</div>
+          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>nutrition · macros · history</div>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          {["today","history"].map(function(v) {
+            const active = view === v;
+            return (
+              <button key={v} onClick={() => setView(v)}
+                style={{ padding:"7px 14px", background:active?"rgba(200,255,0,0.1)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:10, color:active?C.lime:C.gray, cursor:"pointer", textTransform:"uppercase", letterSpacing:0.5 }}>
+                {v}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {view === "today"   && <TodayView />}
+      {view === "history" && <HistoryView />}
+      {editingItem && <ItemEditSheet />}
     </div>
   );
 }
@@ -7785,7 +8095,7 @@ export default function App() {
 
       {tab === "home"    && <HomeTab data={appData} onLogMeal={() => setModal("meal")} onLogWeight={() => setModal("weight")} onAction={handleCoachAction} />}
       {tab === "lifts"   && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
-      {tab === "fuel"    && <FuelTab data={appData} onLogMeal={() => setModal("meal")} />}
+      {tab === "fuel"    && <FuelTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
       {tab === "profile" && (
         <ProfileTab
           data={appData}
