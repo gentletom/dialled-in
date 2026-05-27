@@ -3575,12 +3575,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
                         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
                           <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1 }}>LOG YOUR SETS{ex?.unilateral ? " · UNILATERAL" : ""}{ex?.metric === "time" ? " · TIME-BASED" : ""}</div>
                           <div style={{ display:"flex", gap:6 }}>
-                            <button onClick={() => {
-                              const current = swappedNames[exIdx] || ex.name;
-                              const next = window.prompt(`Swap exercise (e.g. "Standing Calf Raise").\nLeave blank to revert to: ${ex.name}`, current);
-                              if (next === null) return; // cancelled
-                              setSwappedNames(prev => { const n = { ...prev }; if (next.trim() && next.trim() !== ex.name) n[exIdx] = next.trim(); else delete n[exIdx]; return n; });
-                            }} title="Swap this exercise" style={{ fontFamily:F.mono, fontSize:9, padding:"3px 8px", background:"transparent", border:`1px solid ${C.border}`, color:swappedNames[exIdx] ? C.amber : C.gray, borderRadius:5, cursor:"pointer", letterSpacing:0.5 }}>
+                            <button onClick={() => setSwappingIdx(exIdx)} title="Swap this exercise" style={{ fontFamily:F.mono, fontSize:9, padding:"3px 8px", background:"transparent", border:`1px solid ${C.border}`, color:swappedNames[exIdx] ? C.amber : C.gray, borderRadius:5, cursor:"pointer", letterSpacing:0.5 }}>
                               ⇄ {swappedNames[exIdx] ? "SWAPPED" : "SWAP"}
                             </button>
                             <button onClick={() => {
