@@ -886,6 +886,7 @@ const ACTIVE_WORKOUT_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 const LIVE_SESSION_KEY = "ft:liveSession";
 const LIVE_SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 const CUSTOM_ROUTINES_KEY = "ft:customRoutines";
+const PLAN_CUSTOM_KEY = "ft:planCustomizations";
 
 function fmtRelativeTime(ts) {
   const diff = Date.now() - ts;
@@ -5035,6 +5036,56 @@ function PlanTab({ data }) {
   const [subTab, setSubTab] = useState("overview");
   const phase = PHASES[activePhase];
 
+  // ── Editable plan customizations (V2.1 Chunk 7) ──────────────────────────
+  const [planCustom, setPlanCustom] = useState({ baseMilestoneDone:{}, customMilestones:[], phaseNotes:{} });
+  const [newMilestone, setNewMilestone] = useState("");
+  const [addingMilestone, setAddingMilestone] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await window.storage.get(PLAN_CUSTOM_KEY);
+        if (raw && raw.value) setPlanCustom(JSON.parse(raw.value));
+      } catch {}
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const savePlanCustom = async (updated) => {
+    setPlanCustom(updated);
+    try { await window.storage.set(PLAN_CUSTOM_KEY, JSON.stringify(updated)); } catch {}
+  };
+
+  const toggleBaseMilestone = (phaseId, idx) => {
+    const key = `${phaseId}:${idx}`;
+    const updated = { ...planCustom, baseMilestoneDone: { ...planCustom.baseMilestoneDone, [key]: !planCustom.baseMilestoneDone[key] } };
+    savePlanCustom(updated);
+  };
+
+  const addCustomMilestone = () => {
+    if (!newMilestone.trim()) return;
+    const m = { id:`m_${Date.now()}`, phaseId: phase.id, text: newMilestone.trim(), done: false };
+    const updated = { ...planCustom, customMilestones: [...(planCustom.customMilestones || []), m] };
+    savePlanCustom(updated);
+    setNewMilestone(""); setAddingMilestone(false);
+  };
+
+  const toggleCustomMilestone = (id) => {
+    const updated = { ...planCustom, customMilestones: planCustom.customMilestones.map(m => m.id === id ? {...m, done:!m.done} : m) };
+    savePlanCustom(updated);
+  };
+
+  const deleteCustomMilestone = (id) => {
+    const updated = { ...planCustom, customMilestones: planCustom.customMilestones.filter(m => m.id !== id) };
+    savePlanCustom(updated);
+  };
+
+  const savePhaseNotes = (notes) => {
+    const updated = { ...planCustom, phaseNotes: { ...(planCustom.phaseNotes || {}), [phase.id]: notes } };
+    savePlanCustom(updated);
+  };
+
   const weekDays = [
     { day:"MON", split:"Upper A", focus:"Chest · Back · Shoulders", color:C.blue },
     { day:"TUE", split:"Lower A", focus:"Posterior Chain", color:C.teal },
@@ -5137,6 +5188,33 @@ function PlanTab({ data }) {
 
         {subTab === "overview" && (
           <div>
+            {/* Phase notes — editable */}
+            <Card style={{ marginBottom:12 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: editingNotes ? 8 : 4 }}>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5 }}>MY NOTES FOR THIS PHASE</div>
+                <button onClick={() => setEditingNotes(e => !e)}
+                  style={{ background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"3px 9px", fontFamily:F.mono, fontSize:9, color:C.gray, cursor:"pointer" }}>
+                  {editingNotes ? "DONE" : "EDIT"}
+                </button>
+              </div>
+              {editingNotes ? (
+                <textarea
+                  autoFocus
+                  value={planCustom.phaseNotes?.[phase.id] || ""}
+                  onChange={e => savePhaseNotes(e.target.value)}
+                  placeholder="Add your own goals, notes, or reminders for this phase…"
+                  style={{ width:"100%", minHeight:80, padding:"10px", background:"#1A1A22", border:`1px solid ${phase.color}60`, borderRadius:8, fontFamily:F.mono, fontSize:12, color:C.white, outline:"none", resize:"vertical", boxSizing:"border-box" }}
+                />
+              ) : planCustom.phaseNotes?.[phase.id] ? (
+                <div style={{ fontFamily:F.mono, fontSize:12, color:C.grayLight, lineHeight:1.7, whiteSpace:"pre-wrap" }}>
+                  {planCustom.phaseNotes[phase.id]}
+                </div>
+              ) : (
+                <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, fontStyle:"italic" }}>
+                  No notes yet — tap EDIT to add your goals for this phase.
+                </div>
+              )}
+            </Card>
             <Card>
               <SL>Phase Goal</SL>
               <div style={{ fontFamily:F.mono, fontSize:12, color:C.grayLight, lineHeight:1.8 }}>{phase.goal}</div>
@@ -5212,15 +5290,65 @@ function PlanTab({ data }) {
 
         {subTab === "milestones" && (
           <Card>
-            <SL>Phase {phase.id} Milestones</SL>
-            {phase.milestones.map((m, i) => (
-              <div key={i} style={{ display:"flex", gap:12, padding:"11px 0", borderBottom:i < phase.milestones.length-1 ? `1px solid ${C.border}` : "none", alignItems:"flex-start" }}>
-                <div style={{ width:22, height:22, borderRadius:6, border:`2px solid ${phase.status === "active" ? phase.color : C.border}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, marginTop:1 }}>
-                  {phase.status !== "active" && <Check size={12} color={C.gray} />}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <SL>Phase {phase.id} Milestones</SL>
+              <SBtn onClick={() => setAddingMilestone(a => !a)}>+ ADD</SBtn>
+            </div>
+
+            {/* Base milestones — checkboxes toggle done state */}
+            {phase.milestones.map((m, i) => {
+              const key = `${phase.id}:${i}`;
+              const done = planCustom.baseMilestoneDone?.[key] || false;
+              return (
+                <div key={i} onClick={() => toggleBaseMilestone(phase.id, i)}
+                  style={{ display:"flex", gap:12, padding:"11px 0", borderBottom:`1px solid ${C.border}`, alignItems:"flex-start", cursor:"pointer" }}>
+                  <div style={{ width:22, height:22, borderRadius:6, flexShrink:0, marginTop:1, display:"flex", alignItems:"center", justifyContent:"center",
+                    background: done ? `${phase.color}25` : "transparent",
+                    border:`2px solid ${done ? phase.color : C.border}`,
+                  }}>
+                    {done && <Check size={12} color={phase.color} />}
+                  </div>
+                  <div style={{ fontFamily:F.mono, fontSize:12, color: done ? C.gray : C.grayLight, lineHeight:1.6, textDecoration: done ? "line-through" : "none" }}>{m}</div>
                 </div>
-                <div style={{ fontFamily:F.mono, fontSize:12, color:C.grayLight, lineHeight:1.6 }}>{m}</div>
+              );
+            })}
+
+            {/* Custom milestones */}
+            {(planCustom.customMilestones || []).filter(m => m.phaseId === phase.id).map(m => (
+              <div key={m.id} style={{ display:"flex", gap:12, padding:"11px 0", borderBottom:`1px solid ${C.border}`, alignItems:"flex-start" }}>
+                <div onClick={() => toggleCustomMilestone(m.id)}
+                  style={{ width:22, height:22, borderRadius:6, flexShrink:0, marginTop:1, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer",
+                    background: m.done ? `${phase.color}25` : "transparent",
+                    border:`2px solid ${m.done ? phase.color : C.border}`,
+                  }}>
+                  {m.done && <Check size={12} color={phase.color} />}
+                </div>
+                <div style={{ flex:1, fontFamily:F.mono, fontSize:12, color: m.done ? C.gray : C.lime, lineHeight:1.6, textDecoration: m.done ? "line-through" : "none" }}>
+                  {m.text}
+                  <span style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginLeft:6 }}>CUSTOM</span>
+                </div>
+                <button onClick={() => deleteCustomMilestone(m.id)}
+                  style={{ background:"none", border:"none", color:C.gray, cursor:"pointer", fontSize:14, padding:"0 4px", flexShrink:0 }}>×</button>
               </div>
             ))}
+
+            {/* Add milestone inline form */}
+            {addingMilestone && (
+              <div style={{ marginTop:12, display:"flex", gap:8, alignItems:"flex-start" }}>
+                <input
+                  autoFocus
+                  value={newMilestone}
+                  onChange={e => setNewMilestone(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") addCustomMilestone(); if (e.key === "Escape") { setAddingMilestone(false); setNewMilestone(""); } }}
+                  placeholder="New milestone…"
+                  style={{ flex:1, padding:"8px 10px", background:"#1A1A22", border:`1px solid ${phase.color}60`, borderRadius:8, fontFamily:F.mono, fontSize:12, color:C.white, outline:"none" }}
+                />
+                <button onClick={addCustomMilestone}
+                  style={{ padding:"8px 12px", background:`${phase.color}20`, border:`1px solid ${phase.color}`, borderRadius:8, fontFamily:F.mono, fontSize:11, color:phase.color, cursor:"pointer" }}>
+                  ADD
+                </button>
+              </div>
+            )}
           </Card>
         )}
       </div>
@@ -5672,7 +5800,12 @@ ${splitPrescriptions}
 
 PROGRESSIVE OVERLOAD SYSTEM: Double progression. Own all reps at top of range → add weight next session (Upper: +5 lbs, Lower: +10 lbs). Last set of each exercise = push set (failure).
 
-When the athlete mentions deviations (skipped sets, went to failure early, injury, fatigue, time constraints), give specific adjustments to their prescriptions. When they ask questions, answer directly using their actual data. You can adjust their program, nutrition targets, recovery protocols, or anything else based on what they tell you.`;
+When the athlete mentions deviations (skipped sets, went to failure early, injury, fatigue, time constraints), give specific adjustments to their prescriptions. When they ask questions, answer directly using their actual data. You can adjust their program, nutrition targets, recovery protocols, or anything else based on what they tell you.
+
+PLAN PROPOSAL PROTOCOL: When you want to propose a specific change to Thomas's training plan — adding a milestone, adjusting a goal, or setting a new target — end your response with this block on its own line (no extra text after it):
+<PLAN_PROPOSAL>{"type":"milestone","phaseId":1,"text":"Your specific milestone text here"}</PLAN_PROPOSAL>
+Use phaseId 1 (Foundation May-Aug 2026), 2 (Accumulation Sep-Dec 2026), 3 (Peak Jan-Apr 2027), or 4 (Maintain).
+Only propose when you're genuinely recommending a plan change — not for every message. Keep proposals short and actionable.`;
 }
 
 // ── Next Session Prescriptions Card ──────────────────────────────
@@ -5818,12 +5951,50 @@ function NextSessionPrescriptions({ data }) {
 }
 
 // ── Coach Chat ────────────────────────────────────────────────────
+// ── Plan Proposal Card — inline in CoachChat (V2.1 Chunk 7) ─────────────────
+function PlanProposalCard({ proposal, onAccept, onDismiss }) {
+  const phaseColors = { 1:C.lime, 2:C.teal, 3:C.orange, 4:C.purple };
+  const color = phaseColors[proposal.phaseId] || C.lime;
+  const phaseName = PHASES.find(p => p.id === proposal.phaseId)?.name || `Phase ${proposal.phaseId}`;
+  return (
+    <div style={{ background:`${color}10`, border:`1px solid ${color}40`, borderRadius:10, padding:"12px 14px", marginTop:8 }}>
+      <div style={{ fontFamily:F.mono, fontSize:9, color:color, letterSpacing:1.5, marginBottom:6 }}>
+        📋 PROPOSED PLAN CHANGE · {phaseName.toUpperCase()}
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:12, color:C.white, lineHeight:1.6, marginBottom:10 }}>
+        {proposal.text}
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={onAccept}
+          style={{ flex:1, padding:"7px", background:`${color}20`, border:`1px solid ${color}`, borderRadius:8, fontFamily:F.mono, fontSize:10, color:color, cursor:"pointer", letterSpacing:1 }}>
+          ✓ ADD TO PLAN
+        </button>
+        <button onClick={onDismiss}
+          style={{ padding:"7px 12px", background:"none", border:`1px solid ${C.border}`, borderRadius:8, fontFamily:F.mono, fontSize:10, color:C.gray, cursor:"pointer" }}>
+          DISMISS
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CoachChat({ data }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [dismissedProposals, setDismissedProposals] = useState(new Set());
   const messagesEndRef = React.useRef(null);
+
+  const savePlanProposal = async (proposal) => {
+    try {
+      const raw = await window.storage.get(PLAN_CUSTOM_KEY);
+      const planCustom = raw && raw.value ? JSON.parse(raw.value) : { baseMilestoneDone:{}, customMilestones:[], phaseNotes:{} };
+      const milestone = { id:`m_${Date.now()}`, phaseId: proposal.phaseId, text: proposal.text, done: false };
+      const updated = { ...planCustom, customMilestones: [...(planCustom.customMilestones || []), milestone] };
+      await window.storage.set(PLAN_CUSTOM_KEY, JSON.stringify(updated));
+    } catch {}
+  };
 
   // Load chat history from storage
   useEffect(() => {
@@ -5952,36 +6123,55 @@ function CoachChat({ data }) {
 
       {/* Messages */}
       <div style={{ height:340, overflowY:"auto", padding:"12px 14px", display:"flex", flexDirection:"column", gap:10 }}>
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            style={{
-              display:"flex",
-              justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-            }}
-          >
-            <div style={{
-              maxWidth:"85%",
-              background: msg.role === "user" ? `${C.lime}20` : C.surfaceAlt,
-              border: `1px solid ${msg.role === "user" ? C.lime+"40" : C.border}`,
-              borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-              padding:"10px 12px",
-            }}>
-              <div style={{
-                fontFamily:F.mono,
-                fontSize:12,
-                color: msg.role === "user" ? C.lime : C.grayLight,
-                lineHeight:1.6,
-                whiteSpace:"pre-wrap",
-              }}>
-                {msg.content}
+        {messages.map((msg, i) => {
+          // Parse plan proposals from assistant messages
+          let displayContent = msg.content;
+          let proposal = null;
+          if (msg.role === "assistant") {
+            const match = msg.content.match(/<PLAN_PROPOSAL>([\s\S]*?)<\/PLAN_PROPOSAL>/);
+            if (match) {
+              displayContent = msg.content.replace(/<PLAN_PROPOSAL>[\s\S]*?<\/PLAN_PROPOSAL>/g, "").trim();
+              try { proposal = JSON.parse(match[1]); } catch {}
+            }
+          }
+          const proposalKey = `${i}_${proposal?.text}`;
+          return (
+            <div key={i}>
+              <div style={{ display:"flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                <div style={{
+                  maxWidth:"85%",
+                  background: msg.role === "user" ? `${C.lime}20` : C.surfaceAlt,
+                  border: `1px solid ${msg.role === "user" ? C.lime+"40" : C.border}`,
+                  borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                  padding:"10px 12px",
+                }}>
+                  <div style={{
+                    fontFamily:F.mono,
+                    fontSize:12,
+                    color: msg.role === "user" ? C.lime : C.grayLight,
+                    lineHeight:1.6,
+                    whiteSpace:"pre-wrap",
+                  }}>
+                    {displayContent}
+                  </div>
+                  <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginTop:4, textAlign:msg.role==="user"?"right":"left" }}>
+                    {msg.timestamp}
+                  </div>
+                </div>
               </div>
-              <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginTop:4, textAlign:msg.role==="user"?"right":"left" }}>
-                {msg.timestamp}
-              </div>
+              {proposal && !dismissedProposals.has(proposalKey) && (
+                <PlanProposalCard
+                  proposal={proposal}
+                  onAccept={async () => {
+                    await savePlanProposal(proposal);
+                    setDismissedProposals(s => new Set([...s, proposalKey]));
+                  }}
+                  onDismiss={() => setDismissedProposals(s => new Set([...s, proposalKey]))}
+                />
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Typing indicator */}
         {loading && (
