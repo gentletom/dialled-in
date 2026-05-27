@@ -3191,6 +3191,59 @@ function EditSessionModal({ session, onSave, onClose }) {
   );
 }
 
+// ── Exercise picker modal (autocomplete from EXERCISE_LIST; allow custom names) ──
+function ExercisePickerModal({ current, originalName, onPick, onClose }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? EXERCISE_LIST.filter(name => name.toLowerCase().includes(q))
+    : EXERCISE_LIST;
+  const canCustom = q.length > 0 && !matches.some(m => m.toLowerCase() === q);
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center", padding:0 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.teal}60`, borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, width:"100%", maxWidth:480, maxHeight:"82vh", display:"flex", flexDirection:"column" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <div style={{ fontFamily:F.display, fontSize:20, color:C.teal, letterSpacing:2 }}>SWAP EXERCISE</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"transparent", border:"none", color:C.gray, fontSize:22, cursor:"pointer", lineHeight:1, padding:"2px 8px" }}>×</button>
+        </div>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginBottom:10 }}>
+          Current: <span style={{ color:C.white }}>{current}</span>{current !== originalName ? ` (originally ${originalName})` : ""}
+        </div>
+        <input
+          autoFocus
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search or type a custom name…"
+          style={{ width:"100%", boxSizing:"border-box", padding:"10px 12px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:8, color:C.white, fontFamily:F.mono, fontSize:13, marginBottom:10, outline:"none" }}
+        />
+        <div style={{ flex:1, overflowY:"auto", marginBottom:10 }}>
+          {canCustom && (
+            <button onClick={() => onPick(query.trim())} style={{ display:"block", width:"100%", textAlign:"left", padding:"10px 12px", background:`${C.amber}15`, border:`1px solid ${C.amber}60`, borderRadius:8, color:C.amber, fontFamily:F.mono, fontSize:12, cursor:"pointer", marginBottom:6 }}>
+              ✏️ Use custom name: <strong>{query.trim()}</strong>
+            </button>
+          )}
+          {matches.length === 0 && !canCustom && (
+            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, textAlign:"center", padding:"20px 0" }}>No matches. Type a custom name to use it.</div>
+          )}
+          {matches.map(name => (
+            <button key={name} onClick={() => onPick(name)} style={{ display:"flex", width:"100%", textAlign:"left", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", background: name === current ? `${C.teal}15` : "transparent", border:`1px solid ${name === current ? C.teal : C.border}`, borderRadius:8, color: name === current ? C.teal : C.white, fontFamily:F.mono, fontSize:12, cursor:"pointer", marginBottom:4 }}>
+              <span>{name}</span>
+              {name === originalName && <span style={{ fontSize:9, color:C.gray, letterSpacing:1 }}>ORIGINAL</span>}
+              {name === current && name !== originalName && <span style={{ fontSize:9, color:C.teal, letterSpacing:1 }}>CURRENT</span>}
+            </button>
+          ))}
+        </div>
+        {current !== originalName && (
+          <button onClick={() => onPick(originalName)} style={{ width:"100%", padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontSize:11, letterSpacing:1, cursor:"pointer" }}>
+            ↺ REVERT TO ORIGINAL ({originalName})
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TodayTab({ data, updateData, onLogMeal }) {
   const actualDayName = DAYS[new Date().getDay()];
   const actualSplit = SPLIT_MAP[actualDayName];
@@ -3223,6 +3276,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
   const [editTarget, setEditTarget] = useState(null);
   const [swappedNames, setSwappedNames] = useState({}); // { [exIdx]: "Standing Calf Raise" } — per-session exercise substitutions
   const [endedExercises, setEndedExercises] = useState({}); // { [exIdx]: true } — user tapped "end early, fatigued"
+  const [swappingIdx, setSwappingIdx] = useState(null); // exIdx currently being swapped via the picker modal
+  const [prCelebration, setPrCelebration] = useState(null); // { exName, weight, reps, ts } when a logged set crosses an existing PR
   const [expandedEx, setExpandedEx] = useState(null);
   const [hasRestored, setHasRestored] = useState(false); // gate autosave until initial load completes
   const [resumedAt, setResumedAt] = useState(null); // timestamp of restored session, drives banner
@@ -3418,14 +3473,13 @@ function TodayTab({ data, updateData, onLogMeal }) {
   function toggleSetDone(exIdx, setIdx, fillWeight, fillReps) {
     const key = liveKey(exIdx);
     let nowDone = false;
+    let finalWeight = "", finalReps = "";
     setLiveSets(prev => ({
       ...prev,
       [key]: (prev[key]||[]).map((s, i) => {
         if (i !== setIdx) return s;
         nowDone = !s.done;
         const updated = { ...s, done: nowDone };
-        // AUTO-FILL: if checking DONE and weight/reps are empty, fill from prescription
-        // (= "I hit exactly what was prescribed, no manual entry needed")
         if (nowDone) {
           if ((!s.weight || s.weight === "") && fillWeight != null && fillWeight !== "") {
             updated.weight = String(fillWeight);
@@ -3434,6 +3488,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
             updated.reps = String(fillReps);
           }
         }
+        finalWeight = updated.weight;
+        finalReps = updated.reps;
         return updated;
       }),
     }));
@@ -3442,6 +3498,16 @@ function TodayTab({ data, updateData, onLogMeal }) {
       const isSuperset = !!ex?.supersetGroup;
       setRestStartTime(Date.now());
       setRestType(isSuperset ? "superset" : "normal");
+      // PR celebration: if checking a set that beats existing PR, surface a toast
+      const isTime = ex?.metric === "time";
+      if (!isTime) {
+        const exName = swappedNames[exIdx] || ex?.name;
+        if (exName && isPotentialPR(exName, finalWeight, finalReps, data.prs)) {
+          const celebTs = Date.now();
+          setPrCelebration({ exName, weight: finalWeight, reps: finalReps, ts: celebTs });
+          setTimeout(() => setPrCelebration(c => (c && c.ts === celebTs) ? null : c), 4500);
+        }
+      }
     }
   }
 
@@ -3870,9 +3936,16 @@ function TodayTab({ data, updateData, onLogMeal }) {
                             { val:"hard", label:"HARD", color:C.amber, hint:"0-1 reps left" },
                             { val:"fail", label:"FAIL", color:C.orange, hint:"failure" },
                           ];
+                          const exNameForPR = swappedNames[exIdx] || ex?.name;
+                          const isPRRow = !isTime && exNameForPR && isPotentialPR(exNameForPR, s.weight, s.reps, data.prs);
                           return (
                             <div key={setIdx} style={{ marginBottom:8 }}>
-                              <div style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 34px", gap:6, alignItems:"center" }}>
+                              <div style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 34px", gap:6, alignItems:"center", position:"relative" }}>
+                                {isPRRow && (
+                                  <div style={{ position:"absolute", left:24, top:-7, background:C.amber, color:C.dark, fontFamily:F.mono, fontSize:8, fontWeight:700, padding:"1px 5px", borderRadius:3, letterSpacing:0.5, zIndex:1, lineHeight:1.2 }}>
+                                    🔥 PR
+                                  </div>
+                                )}
                                 <div style={{ fontFamily:F.mono, fontSize:11, color:s.done?C.lime:C.gray, textAlign:"center" }}>
                                   {isLast ? "🔥" : setIdx+1}
                                 </div>
@@ -4092,6 +4165,34 @@ function TodayTab({ data, updateData, onLogMeal }) {
           }}
           onClose={() => setEditTarget(null)}
         />
+      )}
+
+      {/* Exercise picker (swap) modal */}
+      {swappingIdx !== null && wo?.exercises?.[swappingIdx] && (
+        <ExercisePickerModal
+          current={swappedNames[swappingIdx] || wo.exercises[swappingIdx].name}
+          originalName={wo.exercises[swappingIdx].name}
+          onPick={(name) => {
+            setSwappedNames(prev => {
+              const n = { ...prev };
+              if (name && name !== wo.exercises[swappingIdx].name) n[swappingIdx] = name;
+              else delete n[swappingIdx];
+              return n;
+            });
+            setSwappingIdx(null);
+          }}
+          onClose={() => setSwappingIdx(null)}
+        />
+      )}
+
+      {/* PR Celebration toast — bottom-of-screen when a checked set beats existing PR */}
+      {prCelebration && (
+        <div style={{ position:"fixed", left:0, right:0, bottom:80, display:"flex", justifyContent:"center", zIndex:150, pointerEvents:"none", padding:"0 12px" }}>
+          <div style={{ background:C.lime, color:C.dark, padding:"10px 16px", borderRadius:14, fontFamily:F.display, letterSpacing:1.5, fontSize:14, boxShadow:"0 8px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:10, maxWidth:"100%" }}>
+            <span style={{ fontSize:22 }}>🏆</span>
+            <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>NEW PR — {prCelebration.exName} · {prCelebration.weight} × {prCelebration.reps}</span>
+          </div>
+        </div>
       )}
     </div>
   );
