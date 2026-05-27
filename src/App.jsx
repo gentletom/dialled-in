@@ -1544,7 +1544,15 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       if (!text) throw new Error("empty response");
       let parsed;
       try {
-        parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+        parsed = (() => {
+          // Robust JSON extract: strip code fences, then find the outermost { } block
+          let s = text.replace(/```json[\s]*/gi, "").replace(/```/g, "").trim();
+          if (!s.startsWith("{") && !s.startsWith("[")) {
+            const m = s.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+            if (m) s = m[0];
+          }
+          return JSON.parse(s);
+        })();
       } catch {
         throw new Error(`unparseable: ${text.slice(0, 50)}`);
       }
@@ -1577,7 +1585,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
         headers: aiHeaders(),
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 1000,
+          max_tokens: 1800,
           messages: [{
             role: "user",
             content: buildMacroPrompt(ctx, textDesc),
@@ -1593,7 +1601,15 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       if (!text) throw new Error("empty response");
       let parsed;
       try {
-        parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+        parsed = (() => {
+          // Robust JSON extract: strip code fences, then find the outermost { } block
+          let s = text.replace(/```json[\s]*/gi, "").replace(/```/g, "").trim();
+          if (!s.startsWith("{") && !s.startsWith("[")) {
+            const m = s.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+            if (m) s = m[0];
+          }
+          return JSON.parse(s);
+        })();
       } catch {
         throw new Error(`unparseable: ${text.slice(0, 50)}`);
       }
