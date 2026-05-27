@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
-import { Dumbbell, Utensils, TrendingUp, User, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings } from "lucide-react";
+import { Dumbbell, Utensils, TrendingUp, User, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings, Brain } from "lucide-react";
 
 // ── Storage helpers ───────────────────────────────────────────────
 async function sGet(key, fallback) {
@@ -7488,12 +7488,195 @@ function PhotoViewerModal({ photo, type, onClose, onDelete, onUpdate }) {
   );
 }
 
+
+// ── FuelTab (V2.2 Chunk A scaffold — full nutrition hub in Chunks B-E) ──
+function FuelTab({ data, onLogMeal }) {
+  return (
+    <div style={{ padding:"18px 16px" }}>
+      <div style={{ marginBottom:20 }}>
+        <div style={{ fontFamily:F.display, fontSize:22, color:C.lime, letterSpacing:2 }}>FUEL</div>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>nutrition · macros · meal plans</div>
+      </div>
+
+      {/* Today's macro summary */}
+      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:14 }}>TODAY'S NUTRITION</div>
+        {(() => {
+          const t = getToday();
+          const m = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
+          const macros = [
+            { label:"KCAL",    val:Math.round(m.calories), target:data.profile && data.profile.calorieTarget ? data.profile.calorieTarget.training : 3200, color:C.lime },
+            { label:"PROTEIN", val:Math.round(m.protein),  target:data.profile ? data.profile.proteinTarget || 240 : 240, color:C.teal },
+            { label:"CARBS",   val:Math.round(m.carbs),    target:data.profile ? data.profile.carbTarget || 320 : 320,    color:C.orange },
+            { label:"FAT",     val:Math.round(m.fat),      target:data.profile ? data.profile.fatTarget || 85 : 85,       color:C.purple },
+          ];
+          return (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", gap:10 }}>
+              {macros.map(function(mac) {
+                const pct = Math.min(100, Math.round((mac.val / mac.target) * 100));
+                return (
+                  <div key={mac.label} style={{ textAlign:"center" }}>
+                    <div style={{ fontFamily:F.display, fontSize:20, color:mac.color }}>{mac.val}</div>
+                    <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginBottom:5 }}>{mac.label}</div>
+                    <div style={{ height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:pct+"%", background:mac.color, borderRadius:2 }} />
+                    </div>
+                    <div style={{ fontFamily:F.mono, fontSize:7, color:mac.color, opacity:0.6, marginTop:2 }}>{pct}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Log meal CTA */}
+      <button onClick={onLogMeal} style={{ width:"100%", padding:"14px", background:"rgba(200,255,0,0.08)", border:"1px solid rgba(200,255,0,0.4)", borderRadius:12, fontFamily:F.mono, fontSize:12, color:C.lime, cursor:"pointer", letterSpacing:1, fontWeight:700, marginBottom:12 }}>
+        + LOG MEAL
+      </button>
+
+      {/* Today's meal items */}
+      {(() => {
+        const t = getToday();
+        const items = (data.meals[t] || {}).items || [];
+        if (!items.length) return (
+          <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:12, padding:"22px 16px", textAlign:"center" }}>
+            <div style={{ fontSize:30, marginBottom:8 }}>{'🍽️'}</div>
+            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>No meals logged today</div>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, opacity:0.6, marginTop:4 }}>Tap + LOG MEAL to start tracking</div>
+          </div>
+        );
+        return (
+          <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:12, overflow:"hidden" }}>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1.5, padding:"11px 14px 8px" }}>{"TODAY'S MEALS — "+items.length+" item"+(items.length!==1?"s":"")}</div>
+            {items.map(function(item, i) {
+              return (
+                <div key={i} style={{ padding:"10px 14px", borderTop:"1px solid "+C.border, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <div style={{ fontFamily:F.body, fontSize:13, color:C.white, flex:1, marginRight:8 }}>{item.name || item.description || "Meal"}</div>
+                  <div style={{ fontFamily:F.mono, fontSize:11, color:C.lime, flexShrink:0 }}>{Math.round(item.calories||0)} kcal</div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Meal plans placeholder — V2.2 Chunk D */}
+      <div style={{ background:C.surfaceAlt, border:"1px dashed "+C.border, borderRadius:12, padding:"14px 16px", marginTop:12, textAlign:"center" }}>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1 }}>MEAL PLANS & MICRO TRACKING — COMING SOON</div>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, opacity:0.5, marginTop:4 }}>Save templates · AI weekly plans · Full micro breakdown</div>
+      </div>
+    </div>
+  );
+}
+
+// ── ProfileTab (V2.2 Chunk A — nested sub-tabs: OVERVIEW / PLAN / STATS) ──
+function ProfileTab({ data, updateData, onLogMeasurements, onLogMeal, onLogPR, onEditDay, onOpenSettings }) {
+  const [subTab, setSubTab] = React.useState("overview");
+  const subTabs = [
+    { id:"overview", label:"OVERVIEW" },
+    { id:"plan",     label:"PLAN"     },
+    { id:"stats",    label:"STATS"    },
+  ];
+  return (
+    <div>
+      {/* Profile header with gear */}
+      <div style={{ padding:"18px 16px 0", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+        <div>
+          <div style={{ fontFamily:F.display, fontSize:22, color:C.lime, letterSpacing:2 }}>PROFILE</div>
+          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>progress · plan · stats</div>
+        </div>
+        <button onClick={onOpenSettings}
+          style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:10, padding:"8px 11px", cursor:"pointer", display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
+          <Settings size={13} color={C.gray} />
+          <span style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>SETTINGS</span>
+        </button>
+      </div>
+
+      {/* Sub-tab pills */}
+      <div style={{ display:"flex", padding:"12px 16px 0", gap:6 }}>
+        {subTabs.map(function(st) {
+          const active = subTab === st.id;
+          return (
+            <button key={st.id} onClick={() => setSubTab(st.id)}
+              style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:9, color:active?C.lime:C.gray, cursor:"pointer", letterSpacing:0.5 }}>
+              {st.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sub-tab content */}
+      {subTab === "overview" && (
+        <div style={{ padding:"14px 16px" }}>
+          <VisionBoard data={data} />
+        </div>
+      )}
+      {subTab === "plan" && <PlanTab data={data} />}
+      {subTab === "stats" && (
+        <div style={{ padding:"14px 16px" }}>
+          <GainsTab data={data}
+            onLogMeasurements={onLogMeasurements}
+            onLogMeal={onLogMeal}
+            onLogPR={onLogPR}
+            onEditDay={onEditDay}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── CoachDrawer (V2.2 Chunk A — full-screen bottom-sheet overlay) ──────────
+function CoachDrawer({ data, updateData, onAction, onClose }) {
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:500, display:"flex", flexDirection:"column" }}>
+      <div onClick={onClose} style={{ flex:1, background:"rgba(0,0,0,0.72)", backdropFilter:"blur(2px)" }} />
+      <div style={{ background:C.bg, borderTop:"2px solid rgba(200,255,0,0.25)", borderRadius:"20px 20px 0 0", maxHeight:"92vh", overflowY:"auto", maxWidth:480, width:"100%", margin:"0 auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px 6px", borderBottom:"1px solid "+C.border }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <Brain size={16} color={C.lime} />
+            <div style={{ fontFamily:F.display, fontSize:18, color:C.lime, letterSpacing:2 }}>COACH</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", padding:4 }}>
+            <X size={20} color={C.gray} />
+          </button>
+        </div>
+        <CoachTab data={data} updateData={updateData} onAction={function(act) { onAction(act); if (act === "settings") onClose(); }} />
+      </div>
+    </div>
+  );
+}
+
+// ── SettingsDrawer (V2.2 Chunk A — standalone settings overlay) ────────────
+function SettingsDrawer({ onClose }) {
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:500, display:"flex", flexDirection:"column" }}>
+      <div onClick={onClose} style={{ flex:1, background:"rgba(0,0,0,0.72)", backdropFilter:"blur(2px)" }} />
+      <div style={{ background:C.bg, borderTop:"2px solid "+C.border, borderRadius:"20px 20px 0 0", maxHeight:"92vh", overflowY:"auto", maxWidth:480, width:"100%", margin:"0 auto" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px 6px", borderBottom:"1px solid "+C.border }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <Settings size={16} color={C.gray} />
+            <div style={{ fontFamily:F.display, fontSize:18, color:C.white, letterSpacing:2 }}>SETTINGS</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", padding:4 }}>
+            <X size={20} color={C.gray} />
+          </button>
+        </div>
+        <SettingsTab />
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("lifts");
   const [appData, setAppData] = useState(null);
   const [modal, setModal] = useState(null);
   const [mealEditDate, setMealEditDate] = useState(null);
+  const [coachDrawerOpen, setCoachDrawerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -7551,19 +7734,11 @@ export default function App() {
   const coachScore = Math.round((items.filter(i => i.done).length / items.length) * 100);
   const coachColor = coachScore >= 80 ? C.lime : coachScore >= 50 ? C.amber : C.orange;
 
-  function fabAction() {
-    // FAB defaults to MEAL LOG everywhere — that's what you do most often.
-    // Workout logging lives on LIFTS as "Start Session"; weight stays on COACH completeness.
-    return setModal("meal");
-  }
-
   const navItems = [
-    { id:"home", label:"HOME", Icon:Home },
-    { id:"lifts", label:"LIFTS", Icon:Dumbbell },
-    { id:"plan", label:"PLAN", Icon:Map },
-    { id:"coach", label:"COACH", Icon:Zap },
+    { id:"home",    label:"HOME",    Icon:Home },
+    { id:"lifts",   label:"LIFTS",   Icon:Dumbbell },
+    { id:"fuel",    label:"FUEL",    Icon:Utensils },
     { id:"profile", label:"PROFILE", Icon:User },
-    { id:"settings", label:"SETUP", Icon:Settings },
   ];
 
   function handleCoachAction(action) {
@@ -7573,11 +7748,12 @@ export default function App() {
     else if (action === "workout") setTab("lifts");
     else if (action === "measurements") setModal("measurements");
     else if (action === "pr") setModal("pr");
-    else if (action === "settings") setTab("settings");
+    else if (action === "settings") setSettingsOpen(true);
+    else if (action === "fuel_tab") setTab("fuel");
   }
 
   return (
-    <div style={{ background:C.bg, minHeight:"100vh", fontFamily:F.body, color:C.white, maxWidth:480, margin:"0 auto", paddingBottom:72, overflowX:"hidden" }}>
+    <div style={{ background:C.bg, minHeight:"100vh", fontFamily:F.body, color:C.white, maxWidth:480, margin:"0 auto", paddingBottom:80, overflowX:"hidden" }}>
 
       {/* Sticky header */}
       <div style={{ padding:"14px 16px 0", background:C.bg, position:"sticky", top:0, zIndex:100, borderBottom:`1px solid ${C.border}` }}>
@@ -7586,7 +7762,7 @@ export default function App() {
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             {/* Coach score badge */}
             <div style={{ background:`${coachColor}18`, border:`1px solid ${coachColor}50`, borderRadius:20, padding:"3px 9px", fontFamily:F.mono, fontSize:9, color:coachColor, cursor:"pointer" }}
-              onClick={() => setTab("coach")}>
+              onClick={() => setCoachDrawerOpen(true)}>
               📊 {coachScore}%
             </div>
             {todayWo && (
@@ -7599,91 +7775,72 @@ export default function App() {
             </div>
           </div>
         </div>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:10 }}>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, paddingBottom:10 }}>
           {getTodayLabel()} · {todayWo || "REST DAY"}
-        </div>
-        <div style={{ display:"flex" }}>
-          {navItems.map(({ id, label, Icon }) => {
-            const active = tab === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                style={{
-                  flex:1, padding:"8px 0 10px", background:"none", border:"none",
-                  borderBottom: `2px solid ${active ? C.lime : "transparent"}`,
-                  color: active ? C.lime : C.gray,
-                  fontFamily: F.mono, fontSize:7, cursor:"pointer",
-                  display:"flex", flexDirection:"column", alignItems:"center", gap:3,
-                  position:"relative",
-                }}
-              >
-                <Icon size={13} />
-                {label}
-                {id === "coach" && coachScore < 80 && !active && (
-                  <div style={{ position:"absolute", top:4, right:"25%", width:6, height:6, borderRadius:"50%", background:coachColor }} />
-                )}
-                {id === "home" && coachScore < 80 && !active && (
-                  <div style={{ position:"absolute", top:4, right:"25%", width:6, height:6, borderRadius:"50%", background:coachColor }} />
-                )}
-              </button>
-            );
-          })}
         </div>
       </div>
 
       {/* Mobile app webview warning (shows above any tab content) */}
       <MobileWebViewBanner />
 
-      {tab === "home" && <HomeTab data={appData} onLogMeal={() => setModal("meal")} onLogWeight={() => setModal("weight")} onAction={handleCoachAction} />}
-      {tab === "lifts" && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
-      {tab === "plan" && <PlanTab data={appData} />}
-      {tab === "coach" && <CoachTab data={appData} updateData={updateData} onAction={handleCoachAction} />}
-      {tab === "settings" && <SettingsTab />}
+      {tab === "home"    && <HomeTab data={appData} onLogMeal={() => setModal("meal")} onLogWeight={() => setModal("weight")} onAction={handleCoachAction} />}
+      {tab === "lifts"   && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
+      {tab === "fuel"    && <FuelTab data={appData} onLogMeal={() => setModal("meal")} />}
       {tab === "profile" && (
-        <div style={{ padding:"18px 16px" }}>
-          <VisionBoard data={appData} />
-          <GainsTab data={appData} onLogMeasurements={() => setModal("measurements")} onLogMeal={() => setModal("meal")} onLogPR={() => setModal("pr")} onEditDay={(date) => { setMealEditDate(date); setModal("meal"); }} />
-        </div>
+        <ProfileTab
+          data={appData}
+          updateData={updateData}
+          onLogMeasurements={() => setModal("measurements")}
+          onLogMeal={() => setModal("meal")}
+          onLogPR={() => setModal("pr")}
+          onEditDay={(date) => { setMealEditDate(date); setModal("meal"); }}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       )}
 
-      {/* FAB */}
-      <button
-        onClick={fabAction}
-        style={{ position:"fixed", bottom:76, right:"max(16px, calc(50% - 228px))", width:48, height:48, background:C.lime, borderRadius:"50%", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 4px 20px rgba(200,255,0,0.2)", zIndex:100 }}
-      >
-        <Plus size={22} color={C.dark} strokeWidth={2.5} />
-      </button>
-
-      {/* Bottom nav */}
-      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.bg, borderTop:`1px solid ${C.border}`, display:"flex", zIndex:100 }}>
-        {navItems.map(({ id, label, Icon }) => {
+      {/* Bottom nav — center-FAB layout: [HOME][LIFTS][🧠][FUEL][PROFILE] */}
+      <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.bg, borderTop:"1px solid "+C.border, display:"flex", alignItems:"flex-end", zIndex:100 }}>
+        {navItems.slice(0,2).map(function({ id, label, Icon }) {
           const active = tab === id;
           return (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              style={{
-                flex:1, padding:"9px 0 13px", background:"none", border:"none",
-                color: active ? C.lime : C.gray,
-                fontFamily: F.mono, fontSize:7, cursor:"pointer",
-                display:"flex", flexDirection:"column", alignItems:"center", gap:3,
-                position:"relative",
-              }}
-            >
+            <button key={id} onClick={() => setTab(id)}
+              style={{ flex:1, padding:"9px 0 13px", background:"none", border:"none", color:active?C.lime:C.gray, fontFamily:F.mono, fontSize:7, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
               <Icon size={15} />
               {label}
-              {id === "coach" && coachScore < 80 && !active && (
-                <div style={{ position:"absolute", top:6, right:"22%", width:5, height:5, borderRadius:"50%", background:coachColor }} />
-              )}
-              {id === "home" && coachScore < 80 && !active && (
-                <div style={{ position:"absolute", top:6, right:"22%", width:5, height:5, borderRadius:"50%", background:coachColor }} />
-              )}
+            </button>
+          );
+        })}
+        {/* Center Coach FAB */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", paddingBottom:10, position:"relative" }}>
+          <button
+            onClick={() => setCoachDrawerOpen(true)}
+            style={{ width:52, height:52, background:"linear-gradient(135deg,"+C.lime+",#8FD400)", borderRadius:"50%", border:"none", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 4px 24px "+C.lime+"55", position:"relative", bottom:14, marginBottom:-10 }}
+          >
+            <Brain size={22} color={C.dark} strokeWidth={2} />
+          </button>
+          <div style={{ fontFamily:F.mono, fontSize:7, color:C.gray }}>COACH</div>
+          {coachScore < 80 && (
+            <div style={{ position:"absolute", top:2, right:"22%", width:6, height:6, borderRadius:"50%", background:coachColor, border:"1.5px solid "+C.bg }} />
+          )}
+        </div>
+        {navItems.slice(2).map(function({ id, label, Icon }) {
+          const active = tab === id;
+          return (
+            <button key={id} onClick={() => setTab(id)}
+              style={{ flex:1, padding:"9px 0 13px", background:"none", border:"none", color:active?C.lime:C.gray, fontFamily:F.mono, fontSize:7, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+              <Icon size={15} />
+              {label}
             </button>
           );
         })}
       </div>
 
+      {coachDrawerOpen && (
+        <CoachDrawer data={appData} updateData={updateData} onAction={handleCoachAction} onClose={() => setCoachDrawerOpen(false)} />
+      )}
+      {settingsOpen && (
+        <SettingsDrawer onClose={() => setSettingsOpen(false)} />
+      )}
       {modal === "weight" && <WeightModal data={appData} updateData={updateData} onClose={() => setModal(null)} />}
       {modal === "meal" && <MealModal data={appData} updateData={updateData} onClose={() => { setModal(null); setMealEditDate(null); }} initialDate={mealEditDate || undefined} />}
       {modal === "meal_hist" && <MealModal data={appData} updateData={updateData} onClose={() => setModal(null)} initialDate={(() => { const d = new Date(); d.setDate(d.getDate()-1); return toLocalDateStr(d); })()} />}
