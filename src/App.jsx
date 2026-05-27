@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
-import { Dumbbell, Utensils, TrendingUp, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check } from "lucide-react";
+import { Dumbbell, Utensils, TrendingUp, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings } from "lucide-react";
 
 // ── Storage helpers ───────────────────────────────────────────────
 async function sGet(key, fallback) {
@@ -5869,18 +5869,43 @@ function CoachTab({ data, updateData, onAction }) {
         )}
       </div>
 
-      {/* Backup & Restore */}
+      {/* Persistent Chat */}
+      <CoachChat data={data} />
+
+      {/* Settings hint — settings live in their own tab now */}
+      <div onClick={() => onAction("settings")}
+        style={{ background:C.surfaceAlt, border:`1px dashed ${C.border}`, borderRadius:12, padding:"12px 14px", marginTop:14, display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer" }}>
+        <div>
+          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1 }}>UTILITIES</div>
+          <div style={{ fontSize:12, color:C.white, marginTop:2 }}>API key, backup, import / export</div>
+        </div>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.teal }}>SETTINGS →</div>
+      </div>
+
+    </div>
+  );
+}
+
+// ── SettingsTab ──────────────────────────────────────────────────
+// New in V2.0 Chunk 6 — split the utility plumbing out of COACH so the
+// coaching tab is purely coaching content. Lives here: API key, git
+// backup, local snapshot backup, manual import.
+function SettingsTab() {
+  return (
+    <div style={{ padding:"18px 16px" }}>
+      <div style={{ marginBottom:14 }}>
+        <div style={{ fontFamily:F.display, fontSize:22, color:C.lime, letterSpacing:2 }}>SETTINGS</div>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>app plumbing · keys · backups</div>
+      </div>
       <CloudBackupCard />
       <ApiKeyCard />
       <BackupCard />
       <ImportBackupCard />
-
-      {/* Export to Claude */}
-      <ExportToClaudeCard data={data} />
-
-      {/* Persistent Chat */}
-      <CoachChat data={data} />
-
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, textAlign:"center", marginTop:18, lineHeight:1.6 }}>
+        DIALLED IN · v2.0<br/>
+        Personal fitness, locally stored. Your data lives on your device.<br/>
+        <span style={{ color:C.teal }}>github.com/gentletom/dialled-in</span>
+      </div>
     </div>
   );
 }
@@ -6064,285 +6089,6 @@ function BackupCard() {
       )}
     </div>
   );
-}
-
-// ── Export to Claude Card ────────────────────────────────────────
-function ExportToClaudeCard({ data }) {
-  const [range, setRange] = useState("7"); // "1" | "7" | "30" | "all"
-  const [output, setOutput] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [photoCounts, setPhotoCounts] = useState({ progress: 0, goal: 0 });
-
-  // Get photo counts from index keys (we don't load actual images for export)
-  useEffect(() => {
-    async function loadCounts() {
-      try {
-        const p = JSON.parse((await window.storage.get("ft:photoProgressIndex")).value);
-        const g = JSON.parse((await window.storage.get("ft:photoGoalIndex")).value);
-        setPhotoCounts({ progress: p?.length || 0, goal: g?.length || 0 });
-      } catch {
-        setPhotoCounts({ progress: 0, goal: 0 });
-      }
-    }
-    loadCounts();
-  }, []);
-
-  async function loadPhotoMetadata() {
-    // Returns light metadata only (no image data) for export
-    try {
-      const idx = JSON.parse((await window.storage.get("ft:photoProgressIndex")).value);
-      const photos = await Promise.all((idx || []).map(async meta => {
-        try {
-          const r = await window.storage.get(`ft:photo:progress:${meta.id}`);
-          const p = JSON.parse(r.value);
-          return { date: p.date, caption: p.caption, weight: p.weight, bodyFat: p.bodyFat };
-        } catch { return null; }
-      }));
-      return photos.filter(Boolean);
-    } catch { return []; }
-  }
-
-  function inRange(dateStr) {
-    if (range === "all") return true;
-    const days = parseInt(range);
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    cutoff.setHours(0, 0, 0, 0);
-    return new Date(dateStr) >= cutoff;
-  }
-
-  async function generate() {
-    const photos = await loadPhotoMetadata();
-    const photosInRange = photos.filter(p => inRange(p.date));
-    const out = buildExportText(data, range, photosInRange, photoCounts);
-    setOutput(out);
-    setCopied(false);
-  }
-
-  async function copyToClipboard() {
-    try {
-      await navigator.clipboard.writeText(output);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      // Fallback: select-all-able textarea is below, user can copy manually
-    }
-  }
-
-  const rangeOptions = [
-    { id:"1", label:"TODAY", days:"24h" },
-    { id:"7", label:"7 DAYS", days:"week" },
-    { id:"30", label:"30 DAYS", days:"month" },
-    { id:"all", label:"ALL TIME", days:"all" },
-  ];
-
-  return (
-    <div style={{ background:C.surface, border:`1px solid ${C.purple}40`, borderRadius:16, padding:16, marginBottom:12 }}>
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
-        <div style={{ fontSize:18 }}>📋</div>
-        <SL>Export to Claude</SL>
-      </div>
-      <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayLight, lineHeight:1.5, marginBottom:12 }}>
-        Generate a text snapshot of your data to paste into chat with Claude for coaching review. Photos are referenced by date/caption only (images stay in the app).
-      </div>
-
-      {/* Range picker */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:6, marginBottom:12 }}>
-        {rangeOptions.map(opt => (
-          <button
-            key={opt.id}
-            onClick={() => { setRange(opt.id); setOutput(""); }}
-            style={{
-              padding:"8px 4px", borderRadius:8,
-              fontFamily:F.mono, fontSize:9, letterSpacing:0.5,
-              background: range === opt.id ? C.purple : "#1A1A22",
-              border: `1px solid ${range === opt.id ? C.purple : C.border}`,
-              color: range === opt.id ? C.white : C.gray,
-              cursor: "pointer", fontWeight:600,
-            }}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {!output ? (
-        <button
-          onClick={generate}
-          style={{ width:"100%", padding:"12px", borderRadius:10, fontFamily:F.mono, fontSize:11, background:C.purple, border:"none", color:C.white, cursor:"pointer", fontWeight:700, letterSpacing:1 }}
-        >
-          GENERATE EXPORT
-        </button>
-      ) : (
-        <>
-          <textarea
-            value={output}
-            readOnly
-            rows={10}
-            onClick={(e) => e.target.select()}
-            style={{ width:"100%", boxSizing:"border-box", padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:10, background:"#1A1A22", border:`1px solid ${C.border}`, color:C.grayLight, resize:"vertical", marginBottom:8, lineHeight:1.5 }}
-          />
-          <div style={{ display:"flex", gap:8 }}>
-            <button
-              onClick={() => setOutput("")}
-              style={{ flex:1, padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:10, background:C.surface, border:`1px solid ${C.border}`, color:C.gray, cursor:"pointer" }}
-            >
-              REGENERATE
-            </button>
-            <button
-              onClick={copyToClipboard}
-              style={{ flex:2, padding:"10px", borderRadius:8, fontFamily:F.mono, fontSize:11, background: copied ? C.lime : C.purple, border:"none", color: copied ? C.dark : C.white, cursor:"pointer", fontWeight:700, letterSpacing:1 }}
-            >
-              {copied ? "✓ COPIED" : "📋 COPY ALL"}
-            </button>
-          </div>
-          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:8, textAlign:"center" }}>
-            {output.length.toLocaleString()} chars · paste into Claude chat
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Build the export text content ───────────────────────────────
-function buildExportText(data, range, photos, photoCounts) {
-  const today = getToday();
-  const rangeLabel = range === "1" ? "Last 24 hours" : range === "7" ? "Last 7 days" : range === "30" ? "Last 30 days" : "All time";
-
-  const inRange = (dateStr) => {
-    if (range === "all") return true;
-    const days = parseInt(range);
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    cutoff.setHours(0, 0, 0, 0);
-    return new Date(dateStr) >= cutoff;
-  };
-
-  const currentW = [...data.weightLog].filter(w=>w.weight).pop();
-  const latestM = data.measurements?.length ? data.measurements[data.measurements.length-1] : null;
-
-  // Filter data by range
-  const meals = Object.entries(data.meals)
-    .filter(([d]) => inRange(d))
-    .sort((a,b) => b[0].localeCompare(a[0]));
-  const workouts = data.workouts.filter(w => inRange(w.date));
-  const weightEntries = data.weightLog.filter(w => inRange(w.date));
-  const prs = data.prs.filter(p => inRange(p.date));
-  const measurements = (data.measurements || []).filter(m => inRange(m.date));
-
-  let out = "";
-  out += `========================================\n`;
-  out += `DIALLED IN — DATA EXPORT\n`;
-  out += `Generated: ${today}\n`;
-  out += `Range: ${rangeLabel}\n`;
-  out += `========================================\n\n`;
-
-  // Profile
-  out += `PROFILE\n`;
-  out += `- 6'1", 34M, lean bulk goal: 185-195 lbs @ 8-10% BF\n`;
-  out += `- Current weight: ${currentW ? `${currentW.weight} lbs (${currentW.date})` : "no weigh-in logged"}\n`;
-  if (latestM) {
-    const m = Object.entries(latestM).filter(([k,v]) => v && k!=="date" && k!=="note").map(([k,v]) => `${k}=${v}`).join(", ");
-    out += `- Latest measurements (${latestM.date}): ${m || "none"}\n`;
-  }
-  out += `- Calorie target: ${data.profile.calorieTarget.training} kcal training / ${data.profile.calorieTarget.rest} kcal rest\n`;
-  out += `- Protein target: ${data.profile.proteinTarget}g\n`;
-  out += `- Training: 4x/week Upper/Lower (Mon Upper A, Tue Lower A, Thu Upper B, Fri Lower B)\n\n`;
-
-  // Workouts
-  out += `WORKOUTS (${workouts.length} sessions in range)\n`;
-  if (workouts.length === 0) {
-    out += `- (none)\n`;
-  } else {
-    workouts.forEach(w => {
-      out += `\n[${w.date}] ${w.name} · ${w.duration || "?"}min · ${w.sets || 0} sets · ${(w.volume/1000).toFixed(1)}k lbs vol · ${w.prs || 0} PRs\n`;
-      if (w.note) out += `  note: ${w.note}\n`;
-      if (w.exercises?.length) {
-        w.exercises.forEach(ex => {
-          const sets = Array.isArray(ex.sets) ? ex.sets.map(s => `${s.weight}x${s.reps}${s.pr ? "★" : ""}`).join(", ") : ex.sets;
-          out += `  - ${ex.name}: ${sets}\n`;
-        });
-      }
-    });
-  }
-  out += `\n`;
-
-  // Nutrition
-  out += `NUTRITION (${meals.length} days logged in range)\n`;
-  if (meals.length === 0) {
-    out += `- (none)\n`;
-  } else {
-    meals.forEach(([date, m]) => {
-      out += `[${date}] ${m.calories} kcal · ${m.protein}g P · ${m.carbs}g C · ${m.fat}g F`;
-      if (m.items?.length) out += ` | ${m.items.join(", ")}`;
-      out += `\n`;
-    });
-  }
-  out += `\n`;
-
-  // Weight & Sleep
-  out += `WEIGHT & SLEEP LOG (${weightEntries.length} entries)\n`;
-  if (weightEntries.length === 0) {
-    out += `- (none)\n`;
-  } else {
-    weightEntries.forEach(w => {
-      out += `[${w.date}] ${w.weight ? w.weight+" lbs" : "no weigh-in"}${w.sleep ? ` · ${w.sleep}h sleep` : ""}${w.note ? ` · ${w.note}` : ""}\n`;
-    });
-  }
-  out += `\n`;
-
-  // PRs
-  out += `PRs IN RANGE (${prs.length})\n`;
-  if (prs.length === 0) {
-    out += `- (none)\n`;
-  } else {
-    prs.forEach(p => {
-      out += `- ${p.date}: ${p.exercise} — ${p.weight} lbs × ${p.reps} reps\n`;
-    });
-  }
-  out += `\n`;
-
-  // ALL-TIME PRs (for context, even if filtering by range)
-  if (range !== "all" && data.prs.length > 0) {
-    out += `ALL-TIME PRs (for context)\n`;
-    data.prs.forEach(p => {
-      out += `- ${p.exercise}: ${p.weight} lbs × ${p.reps} reps (${p.date})\n`;
-    });
-    out += `\n`;
-  }
-
-  // Measurements
-  out += `BODY MEASUREMENTS (${measurements.length} in range)\n`;
-  if (measurements.length === 0) {
-    out += `- (none)\n`;
-  } else {
-    measurements.forEach(m => {
-      const fields = Object.entries(m).filter(([k,v]) => v && k!=="date" && k!=="note").map(([k,v]) => `${k}=${v}`).join(", ");
-      out += `[${m.date}] ${fields}${m.note ? ` | ${m.note}` : ""}\n`;
-    });
-  }
-  out += `\n`;
-
-  // Photos
-  out += `PHOTOS\n`;
-  out += `- Total in app: ${photoCounts.progress} progress, ${photoCounts.goal} goal\n`;
-  if (photos.length > 0) {
-    out += `- Progress photos in range:\n`;
-    photos.forEach(p => {
-      const tags = [];
-      if (p.weight) tags.push(`${p.weight}lb`);
-      if (p.bodyFat) tags.push(`${p.bodyFat}% BF`);
-      out += `  [${p.date}] ${tags.join(" · ") || "no stats"}${p.caption ? ` — "${p.caption}"` : ""}\n`;
-    });
-  }
-  out += `\n`;
-
-  out += `========================================\n`;
-  out += `End of export. Paste into Claude chat for coaching review.\n`;
-  out += `========================================\n`;
-
-  return out;
 }
 
 // ── Vision Board (added to GAINS Tab) ─────────────────────────────
@@ -7000,6 +6746,7 @@ export default function App() {
     { id:"plan", label:"PLAN", Icon:Map },
     { id:"coach", label:"COACH", Icon:Zap },
     { id:"gains", label:"GAINS", Icon:TrendingUp },
+    { id:"settings", label:"SETUP", Icon:Settings },
   ];
 
   function handleCoachAction(action) {
@@ -7009,6 +6756,7 @@ export default function App() {
     else if (action === "workout") setTab("lifts");
     else if (action === "measurements") setModal("measurements");
     else if (action === "pr") setModal("pr");
+    else if (action === "settings") setTab("settings");
   }
 
   return (
@@ -7074,6 +6822,7 @@ export default function App() {
       {tab === "lifts" && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
       {tab === "plan" && <PlanTab />}
       {tab === "coach" && <CoachTab data={appData} updateData={updateData} onAction={handleCoachAction} />}
+      {tab === "settings" && <SettingsTab />}
       {tab === "gains" && (
         <div style={{ padding:"18px 16px" }}>
           <VisionBoard data={appData} />
