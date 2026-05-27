@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
-import { Dumbbell, Utensils, TrendingUp, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings } from "lucide-react";
+import { Dumbbell, Utensils, TrendingUp, User, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings } from "lucide-react";
 
 // ── Storage helpers ───────────────────────────────────────────────
 async function sGet(key, fallback) {
@@ -4503,7 +4503,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
     </div>
   );
 }// ── PLAN Tab ──────────────────────────────────────────────────────
-function PlanTab() {
+function PlanTab({ data }) {
   const [activePhase, setActivePhase] = useState(0);
   const [subTab, setSubTab] = useState("overview");
   const phase = PHASES[activePhase];
@@ -4575,6 +4575,10 @@ function PlanTab() {
           ))}
         </div>
       </div>
+
+      {/* V2.1 — Now vs Goal + Prescriptions moved from COACH/GAINS */}
+      {data && <NowVsGoalSection data={data} />}
+      {data && <NextSessionPrescriptions data={data} />}
 
       <div style={{ padding:"16px 16px 0" }}>
         <Card style={{ background:phase.bg, borderColor:`${phase.color}40` }}>
@@ -5783,10 +5787,7 @@ function CoachTab({ data, updateData, onAction }) {
   const [lastAnalysis, setLastAnalysis] = useState(null);
   const [expandedInsight, setExpandedInsight] = useState(null);
 
-  const items = getCompletenessItems(data);
-  const done = items.filter(i => i.done).length;
-  const score = Math.round((done / items.length) * 100);
-  const scoreColor = score >= 80 ? C.lime : score >= 50 ? C.amber : C.orange;
+
 
   useEffect(() => {
     async function loadCached() {
@@ -5859,49 +5860,6 @@ function CoachTab({ data, updateData, onAction }) {
 
   return (
     <div style={{ padding:"18px 16px" }}>
-
-      {/* Completeness Score */}
-      <div style={{ background:C.surface, border:`1px solid ${scoreColor}40`, borderRadius:16, padding:16, marginBottom:12 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14 }}>
-          <div>
-            <SL>Data Completeness</SL>
-            <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
-              <div style={{ fontFamily:F.display, fontSize:48, color:scoreColor, lineHeight:1 }}>{score}</div>
-              <div style={{ fontFamily:F.mono, fontSize:14, color:scoreColor }}>%</div>
-            </div>
-            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:4 }}>{done}/{items.length} items complete</div>
-          </div>
-          <svg width={70} height={70} viewBox="0 0 70 70">
-            <circle cx={35} cy={35} r={28} fill="none" stroke={C.border} strokeWidth={6}/>
-            <circle cx={35} cy={35} r={28} fill="none" stroke={scoreColor} strokeWidth={6}
-              strokeDasharray={`${2*Math.PI*28}`}
-              strokeDashoffset={`${2*Math.PI*28*(1-score/100)}`}
-              strokeLinecap="round" transform="rotate(-90 35 35)"
-              style={{ transition:"stroke-dashoffset .8s ease" }}/>
-            <text x={35} y={40} textAnchor="middle" fill={scoreColor} style={{ fontFamily:"monospace", fontSize:14, fontWeight:700 }}>{score}%</text>
-          </svg>
-        </div>
-        {items.map((item, i) => (
-          <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderTop:`1px solid ${C.border}` }}>
-            <div style={{ width:20, height:20, borderRadius:6, border:`2px solid ${item.done?C.lime:C.border}`, background:item.done?`${C.lime}20`:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              {item.done && <Check size={11} color={C.lime}/>}
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:12, color:item.done?C.gray:C.white, textDecoration:item.done?"line-through":"none" }}>{item.label}</div>
-              <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:1 }}>{item.hint}</div>
-            </div>
-            {!item.done && (
-              <button onClick={() => onAction(item.action)}
-                style={{ background:`${priorityColor(item.priority)}18`, border:`1px solid ${priorityColor(item.priority)}50`, borderRadius:6, padding:"3px 8px", fontFamily:F.mono, fontSize:9, color:priorityColor(item.priority), cursor:"pointer" }}>
-                FIX
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Next Session Prescriptions */}
-      <NextSessionPrescriptions data={data} />
 
       {/* AI Analysis */}
       <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
@@ -6207,6 +6165,123 @@ function BackupCard() {
   );
 }
 
+// ── NowVsGoalSection — NOW vs GOAL + Progress Rings (moved to PLAN in V2.1) ──
+function NowVsGoalSection({ data }) {
+  const currentW = [...data.weightLog].filter(w=>w.weight).pop()?.weight || 175.8;
+  const goalW = 190;
+  const startW = 175.8;
+  const weightProgress = Math.max(0, Math.min(1, (currentW - startW) / (goalW - startW)));
+  const latestM = data.measurements?.length ? data.measurements[data.measurements.length-1] : null;
+  const currentBF = latestM?.bodyFat || 16;
+  const goalBF = 9;
+  const bfProgress = Math.max(0, Math.min(1, (currentBF - goalBF) / (16 - goalBF)));
+  const liftTargets = [
+    { name:"Incline Bench", current:110, goal:180, pr:data.prs.find(p=>p.exercise.includes("Incline"))?.weight||110 },
+    { name:"Squat",         current:205, goal:315, pr:data.prs.find(p=>p.exercise.includes("Squat"))?.weight||205 },
+    { name:"RDL",           current:315, goal:425, pr:data.prs.find(p=>p.exercise.includes("RDL"))?.weight||315 },
+    { name:"Shoulder Press",current:55,  goal:100, pr:data.prs.find(p=>p.exercise.includes("Shoulder"))?.weight||55 },
+  ];
+  const milestones = [
+    { label:"Started the journey", done:true },
+    { label:"Weight ≥ 178 lbs", done:currentW >= 178 },
+    { label:"Incline bench > 125 lbs", done:(data.prs.find(p=>p.exercise.includes("Incline"))?.weight||0) > 125 },
+    { label:"Weight ≥ 182 lbs", done:currentW >= 182 },
+    { label:"Squat ≥ 225 lbs", done:(data.prs.find(p=>p.exercise.includes("Squat"))?.weight||0) >= 225 },
+    { label:"Weight ≥ 185 lbs", done:currentW >= 185 },
+    { label:"Body fat < 14%", done:currentBF < 14 },
+    { label:"Goal physique achieved", done:currentW >= 185 && currentBF <= 10 },
+  ];
+  const milestonePct = milestones.filter(m=>m.done).length / milestones.length;
+
+  return (
+    <div>
+      {/* NOW vs GOAL cards */}
+      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
+        <SL>📊 NOW vs GOAL</SL>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+          <div style={{ background:C.surfaceAlt, borderRadius:12, padding:"12px 14px" }}>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:8, letterSpacing:1 }}>NOW</div>
+            {[
+              { label:"Weight", val:`${currentW} lbs`, color:C.white },
+              { label:"Est. BF%", val:`~${currentBF}%`, color:C.orange },
+              { label:"Bench PR", val:`${data.prs.find(p=>p.exercise.includes("Incline"))?.weight||110} lbs`, color:C.white },
+              { label:"Squat PR", val:`${data.prs.find(p=>p.exercise.includes("Squat"))?.weight||205} lbs`, color:C.white },
+              { label:"RDL PR",   val:`${data.prs.find(p=>p.exercise.includes("RDL"))?.weight||315} lbs`, color:C.white },
+            ].map((item, i) => (
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:`1px solid ${C.border}` }}>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{item.label}</div>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:item.color, fontWeight:600 }}>{item.val}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ background:"#0A1100", border:`1px solid ${C.lime}30`, borderRadius:12, padding:"12px 14px" }}>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.lime, marginBottom:8, letterSpacing:1 }}>GOAL 🏆</div>
+            {[
+              { label:"Weight", val:"185-195 lbs", color:C.lime },
+              { label:"BF%",    val:"8-10%",       color:C.lime },
+              { label:"Bench",  val:"175-185 lbs", color:C.lime },
+              { label:"Squat",  val:"315 lbs",     color:C.lime },
+              { label:"RDL",    val:"425+ lbs",    color:C.lime },
+            ].map((item, i) => (
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:`1px solid ${C.border}` }}>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{item.label}</div>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:item.color, fontWeight:600 }}>{item.val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Progress rings + Strength Progress */}
+      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
+        <SL>Progress Rings</SL>
+        <div style={{ display:"flex", justifyContent:"space-around", alignItems:"center", marginBottom:16 }}>
+          {[
+            { label:"Weight",     pct:weightProgress,  color:C.lime,   sub:`${currentW} → ${goalW}` },
+            { label:"Body Fat",   pct:1-bfProgress,    color:C.teal,   sub:`${currentBF}% → 9%` },
+            { label:"Milestones", pct:milestonePct,    color:C.purple, sub:`${milestones.filter(m=>m.done).length}/${milestones.length}` },
+          ].map(ring => {
+            const r = 32, circ = 2*Math.PI*r;
+            return (
+              <div key={ring.label} style={{ textAlign:"center" }}>
+                <svg width={80} height={80} viewBox="0 0 80 80">
+                  <circle cx={40} cy={40} r={r} fill="none" stroke={C.border} strokeWidth={7}/>
+                  <circle cx={40} cy={40} r={r} fill="none" stroke={ring.color} strokeWidth={7}
+                    strokeDasharray={circ} strokeDashoffset={circ*(1-ring.pct)}
+                    strokeLinecap="round" transform="rotate(-90 40 40)"
+                    style={{ transition:"stroke-dashoffset 1s ease" }}/>
+                  <text x={40} y={36} textAnchor="middle" fill={ring.color} style={{ fontFamily:"monospace", fontSize:11, fontWeight:700 }}>
+                    {Math.round(ring.pct*100)}%
+                  </text>
+                  <text x={40} y={50} textAnchor="middle" fill={C.gray} style={{ fontFamily:"monospace", fontSize:8 }}>
+                    {ring.label}
+                  </text>
+                </svg>
+                <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>{ring.sub}</div>
+              </div>
+            );
+          })}
+        </div>
+        <SL>Strength Progress</SL>
+        {liftTargets.map(lift => {
+          const barPct = Math.max(0, Math.min(1, (lift.pr - 100) / (lift.goal - 100)));
+          return (
+            <div key={lift.name} style={{ marginBottom:10 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", fontFamily:F.mono, fontSize:10, marginBottom:4 }}>
+                <span style={{ color:C.white }}>{lift.name}</span>
+                <span style={{ color:C.lime }}>{lift.pr} lbs <span style={{ color:C.gray }}>/ {lift.goal} goal</span></span>
+              </div>
+              <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${barPct*100}%`, background:`linear-gradient(90deg, ${C.teal}, ${C.lime})`, borderRadius:3, transition:"width 1s ease" }}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Vision Board (added to GAINS Tab) ─────────────────────────────
 function VisionBoard({ data }) {
   const currentW = [...data.weightLog].filter(w=>w.weight).pop()?.weight || 175.8;
@@ -6245,97 +6320,6 @@ function VisionBoard({ data }) {
 
   return (
     <div>
-      {/* NOW vs GOAL cards */}
-      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
-        <SL>📊 NOW vs GOAL</SL>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
-          {/* NOW */}
-          <div style={{ background:C.surfaceAlt, borderRadius:12, padding:"12px 14px" }}>
-            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:8, letterSpacing:1 }}>NOW</div>
-            {[
-              { label:"Weight", val:`${currentW} lbs`, color:C.white },
-              { label:"Est. BF%", val:`~${currentBF}%`, color:C.orange },
-              { label:"Bench PR", val:`${data.prs.find(p=>p.exercise.includes("Incline"))?.weight||110} lbs`, color:C.white },
-              { label:"Squat PR", val:`${data.prs.find(p=>p.exercise.includes("Squat"))?.weight||205} lbs`, color:C.white },
-              { label:"RDL PR", val:`${data.prs.find(p=>p.exercise.includes("RDL"))?.weight||315} lbs`, color:C.white },
-            ].map((item, i) => (
-              <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:`1px solid ${C.border}` }}>
-                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{item.label}</div>
-                <div style={{ fontFamily:F.mono, fontSize:10, color:item.color, fontWeight:600 }}>{item.val}</div>
-              </div>
-            ))}
-          </div>
-          {/* GOAL */}
-          <div style={{ background:"#0A1100", border:`1px solid ${C.lime}30`, borderRadius:12, padding:"12px 14px" }}>
-            <div style={{ fontFamily:F.mono, fontSize:9, color:C.lime, marginBottom:8, letterSpacing:1 }}>GOAL 🏆</div>
-            {[
-              { label:"Weight", val:"185-195 lbs", color:C.lime },
-              { label:"BF%", val:"8-10%", color:C.lime },
-              { label:"Bench", val:"175-185 lbs", color:C.lime },
-              { label:"Squat", val:"315 lbs", color:C.lime },
-              { label:"RDL", val:"425+ lbs", color:C.lime },
-            ].map((item, i) => (
-              <div key={i} style={{ display:"flex", justifyContent:"space-between", padding:"4px 0", borderBottom:`1px solid ${C.border}` }}>
-                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{item.label}</div>
-                <div style={{ fontFamily:F.mono, fontSize:10, color:item.color, fontWeight:600 }}>{item.val}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Progress rings + silhouette */}
-      <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
-        <SL>Progress Rings</SL>
-        <div style={{ display:"flex", justifyContent:"space-around", alignItems:"center", marginBottom:16 }}>
-          {[
-            { label:"Weight", pct:weightProgress, color:C.lime, sub:`${currentW} → ${goalW}` },
-            { label:"Body Fat", pct:1-bfProgress, color:C.teal, sub:`${currentBF}% → 9%` },
-            { label:"Milestones", pct:milestonePct, color:C.purple, sub:`${milestones.filter(m=>m.done).length}/${milestones.length}` },
-          ].map(ring => {
-            const r = 32, circ = 2*Math.PI*r;
-            return (
-              <div key={ring.label} style={{ textAlign:"center" }}>
-                <svg width={80} height={80} viewBox="0 0 80 80">
-                  <circle cx={40} cy={40} r={r} fill="none" stroke={C.border} strokeWidth={7}/>
-                  <circle cx={40} cy={40} r={r} fill="none" stroke={ring.color} strokeWidth={7}
-                    strokeDasharray={circ}
-                    strokeDashoffset={circ*(1-ring.pct)}
-                    strokeLinecap="round"
-                    transform="rotate(-90 40 40)"
-                    style={{ transition:"stroke-dashoffset 1s ease" }}/>
-                  <text x={40} y={36} textAnchor="middle" fill={ring.color} style={{ fontFamily:"monospace", fontSize:11, fontWeight:700 }}>
-                    {Math.round(ring.pct*100)}%
-                  </text>
-                  <text x={40} y={50} textAnchor="middle" fill={C.gray} style={{ fontFamily:"monospace", fontSize:8 }}>
-                    {ring.label}
-                  </text>
-                </svg>
-                <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>{ring.sub}</div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Lift progress bars */}
-        <SL>Strength Progress</SL>
-        {liftTargets.map(lift => {
-          const pct = Math.min((lift.pr - lift.current) / (lift.goal - lift.current) + (lift.current - lift.current)/(lift.goal - lift.current) + (lift.pr - lift.current)/(lift.goal - lift.current), 1);
-          const barPct = Math.max(0, Math.min(1, (lift.pr - 100) / (lift.goal - 100)));
-          return (
-            <div key={lift.name} style={{ marginBottom:10 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", fontFamily:F.mono, fontSize:10, marginBottom:4 }}>
-                <span style={{ color:C.white }}>{lift.name}</span>
-                <span style={{ color:C.lime }}>{lift.pr} lbs <span style={{ color:C.gray }}>/ {lift.goal} goal</span></span>
-              </div>
-              <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
-                <div style={{ height:"100%", width:`${barPct*100}%`, background:`linear-gradient(90deg, ${C.teal}, ${C.lime})`, borderRadius:3, transition:"width 1s ease" }}/>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
       {/* Milestone tracker with silhouette */}
       <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
         <SL>Milestone Tracker</SL>
@@ -6861,7 +6845,7 @@ export default function App() {
     { id:"lifts", label:"LIFTS", Icon:Dumbbell },
     { id:"plan", label:"PLAN", Icon:Map },
     { id:"coach", label:"COACH", Icon:Zap },
-    { id:"gains", label:"GAINS", Icon:TrendingUp },
+    { id:"profile", label:"PROFILE", Icon:User },
     { id:"settings", label:"SETUP", Icon:Settings },
   ];
 
@@ -6936,10 +6920,10 @@ export default function App() {
 
       {tab === "home" && <HomeTab data={appData} onLogMeal={() => setModal("meal")} onLogWeight={() => setModal("weight")} onAction={handleCoachAction} />}
       {tab === "lifts" && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
-      {tab === "plan" && <PlanTab />}
+      {tab === "plan" && <PlanTab data={appData} />}
       {tab === "coach" && <CoachTab data={appData} updateData={updateData} onAction={handleCoachAction} />}
       {tab === "settings" && <SettingsTab />}
-      {tab === "gains" && (
+      {tab === "profile" && (
         <div style={{ padding:"18px 16px" }}>
           <VisionBoard data={appData} />
           <GainsTab data={appData} onLogMeasurements={() => setModal("measurements")} onLogMeal={() => setModal("meal")} onLogPR={() => setModal("pr")} onEditDay={(date) => { setMealEditDate(date); setModal("meal"); }} />
