@@ -1117,18 +1117,114 @@ const SEED = {
   measurements: [],
 };
 
-const EXERCISE_LIST = [
-  "Bench Press (Barbell)","Incline Bench Press (Smith Machine)","Chest Fly (Pec Deck)","Chest Fly (Cable)",
-  "Decline Chest Press (Machine)","Squat (Barbell)","Hack Squat","Leg Press (Horizontal)",
-  "Romanian Deadlift (Barbell)","Deadlift","Leg Curl (Machine)","Leg Extension",
-  "Hip Thrust (Barbell)","Bulgarian Split Squat","Hip Abduction (Machine)","Hip Adduction (Machine)",
-  "Standing Calf Raise (Machine)","Seated Calf Raise","Overhead Press (Barbell)",
-  "Shoulder Press (Machine Plates)","Lateral Raise (DB)","Lat Pulldown (Cable)",
-  "Reverse Grip Lat Pulldown","Seated Cable Row (V-Grip)","Bent Over Row",
-  "Preacher Curl (Machine)","Bicep Curl (DB)","Triceps Pressdown","Skull Crusher",
-  "Overhead Tricep Extension","Torso Rotation (Cable)","Plank","Cable Crunch",
-  "Hanging Leg Raise","Treadmill",
+// ── Exercise Catalogue (V2.1 Chunk 6) — name + muscle group + equipment ─────
+const EXERCISE_CATALOGUE = [
+  // Chest
+  { name:"Bench Press (Barbell)",                muscle:"Chest",       equipment:"Barbell" },
+  { name:"Incline Bench Press (Barbell)",         muscle:"Chest",       equipment:"Barbell" },
+  { name:"Incline Bench Press (Smith Machine)",   muscle:"Chest",       equipment:"Smith Machine" },
+  { name:"Decline Bench Press (Barbell)",         muscle:"Chest",       equipment:"Barbell" },
+  { name:"Chest Fly (Pec Deck)",                  muscle:"Chest",       equipment:"Machine" },
+  { name:"Chest Fly (Cable)",                     muscle:"Chest",       equipment:"Cable" },
+  { name:"Chest Fly (Dumbbell)",                  muscle:"Chest",       equipment:"Dumbbell" },
+  { name:"Chest Press (Machine)",                 muscle:"Chest",       equipment:"Machine" },
+  { name:"Decline Chest Press (Machine)",         muscle:"Chest",       equipment:"Machine" },
+  { name:"Cable Crossover",                       muscle:"Chest",       equipment:"Cable" },
+  { name:"Low Cable Fly",                         muscle:"Chest",       equipment:"Cable" },
+  { name:"Push-Up",                               muscle:"Chest",       equipment:"Bodyweight" },
+  // Back
+  { name:"Deadlift",                              muscle:"Back",        equipment:"Barbell" },
+  { name:"Romanian Deadlift (Barbell)",           muscle:"Back",        equipment:"Barbell" },
+  { name:"Romanian Deadlift (Dumbbell)",          muscle:"Back",        equipment:"Dumbbell" },
+  { name:"Bent Over Row (Barbell)",               muscle:"Back",        equipment:"Barbell" },
+  { name:"Bent Over Row (Dumbbell)",              muscle:"Back",        equipment:"Dumbbell" },
+  { name:"Lat Pulldown (Wide Grip)",              muscle:"Back",        equipment:"Cable" },
+  { name:"Lat Pulldown (Reverse Grip)",           muscle:"Back",        equipment:"Cable" },
+  { name:"Lat Pulldown (Close Grip)",             muscle:"Back",        equipment:"Cable" },
+  { name:"Seated Cable Row (V-Grip)",             muscle:"Back",        equipment:"Cable" },
+  { name:"Seated Cable Row (Wide Grip)",          muscle:"Back",        equipment:"Cable" },
+  { name:"T-Bar Row",                             muscle:"Back",        equipment:"Barbell" },
+  { name:"Chest Supported Row (Machine)",         muscle:"Back",        equipment:"Machine" },
+  { name:"Single Arm Dumbbell Row",               muscle:"Back",        equipment:"Dumbbell" },
+  { name:"Straight Arm Pulldown",                 muscle:"Back",        equipment:"Cable" },
+  { name:"Pull-Up",                               muscle:"Back",        equipment:"Bodyweight" },
+  { name:"Chin-Up",                               muscle:"Back",        equipment:"Bodyweight" },
+  // Shoulders
+  { name:"Overhead Press (Barbell)",              muscle:"Shoulders",   equipment:"Barbell" },
+  { name:"Shoulder Press (Machine Plates)",       muscle:"Shoulders",   equipment:"Machine" },
+  { name:"Shoulder Press (Dumbbell)",             muscle:"Shoulders",   equipment:"Dumbbell" },
+  { name:"Lateral Raise (DB)",                    muscle:"Shoulders",   equipment:"Dumbbell" },
+  { name:"Lateral Raise (Cable)",                 muscle:"Shoulders",   equipment:"Cable" },
+  { name:"Front Raise (Dumbbell)",                muscle:"Shoulders",   equipment:"Dumbbell" },
+  { name:"Face Pull",                             muscle:"Shoulders",   equipment:"Cable" },
+  { name:"Reverse Fly (Cable)",                   muscle:"Shoulders",   equipment:"Cable" },
+  { name:"Reverse Fly (Pec Deck)",                muscle:"Shoulders",   equipment:"Machine" },
+  { name:"Arnold Press",                          muscle:"Shoulders",   equipment:"Dumbbell" },
+  { name:"Upright Row (Barbell)",                 muscle:"Shoulders",   equipment:"Barbell" },
+  // Biceps
+  { name:"Bicep Curl (Barbell)",                  muscle:"Biceps",      equipment:"Barbell" },
+  { name:"Bicep Curl (DB)",                       muscle:"Biceps",      equipment:"Dumbbell" },
+  { name:"Bicep Curl (Cable)",                    muscle:"Biceps",      equipment:"Cable" },
+  { name:"Preacher Curl (Machine)",               muscle:"Biceps",      equipment:"Machine" },
+  { name:"Preacher Curl (Barbell)",               muscle:"Biceps",      equipment:"Barbell" },
+  { name:"Hammer Curl (Dumbbell)",                muscle:"Biceps",      equipment:"Dumbbell" },
+  { name:"Incline Dumbbell Curl",                 muscle:"Biceps",      equipment:"Dumbbell" },
+  { name:"Spider Curl",                           muscle:"Biceps",      equipment:"Dumbbell" },
+  { name:"Concentration Curl",                    muscle:"Biceps",      equipment:"Dumbbell" },
+  // Triceps
+  { name:"Triceps Pressdown",                     muscle:"Triceps",     equipment:"Cable" },
+  { name:"Triceps Pressdown (Rope)",              muscle:"Triceps",     equipment:"Cable" },
+  { name:"Skull Crusher",                         muscle:"Triceps",     equipment:"Barbell" },
+  { name:"Skull Crusher (Dumbbell)",              muscle:"Triceps",     equipment:"Dumbbell" },
+  { name:"Overhead Tricep Extension",             muscle:"Triceps",     equipment:"Cable" },
+  { name:"Overhead Tricep Extension (Dumbbell)",  muscle:"Triceps",     equipment:"Dumbbell" },
+  { name:"Close Grip Bench Press",                muscle:"Triceps",     equipment:"Barbell" },
+  { name:"Tricep Dip",                            muscle:"Triceps",     equipment:"Bodyweight" },
+  // Quads
+  { name:"Squat (Barbell)",                       muscle:"Quads",       equipment:"Barbell" },
+  { name:"Front Squat (Barbell)",                 muscle:"Quads",       equipment:"Barbell" },
+  { name:"Leg Press (Horizontal)",                muscle:"Quads",       equipment:"Machine" },
+  { name:"Hack Squat",                            muscle:"Quads",       equipment:"Machine" },
+  { name:"Leg Extension",                         muscle:"Quads",       equipment:"Machine" },
+  { name:"Bulgarian Split Squat",                 muscle:"Quads",       equipment:"Dumbbell", unilateral:true },
+  { name:"Lunge (Barbell)",                       muscle:"Quads",       equipment:"Barbell" },
+  { name:"Lunge (Dumbbell)",                      muscle:"Quads",       equipment:"Dumbbell" },
+  { name:"Step-Up (Dumbbell)",                    muscle:"Quads",       equipment:"Dumbbell" },
+  // Hamstrings
+  { name:"Lying Leg Curl (Machine)",              muscle:"Hamstrings",  equipment:"Machine" },
+  { name:"Seated Leg Curl (Machine)",             muscle:"Hamstrings",  equipment:"Machine" },
+  { name:"Sumo Deadlift",                         muscle:"Hamstrings",  equipment:"Barbell" },
+  // Glutes
+  { name:"Hip Thrust (Barbell)",                  muscle:"Glutes",      equipment:"Barbell" },
+  { name:"Hip Thrust (Machine)",                  muscle:"Glutes",      equipment:"Machine" },
+  { name:"Hip Abduction (Machine)",               muscle:"Glutes",      equipment:"Machine" },
+  { name:"Hip Adduction (Machine)",               muscle:"Glutes",      equipment:"Machine" },
+  { name:"Glute Kickback (Cable)",                muscle:"Glutes",      equipment:"Cable" },
+  { name:"Romanian Deadlift (Light)",             muscle:"Glutes",      equipment:"Barbell" },
+  // Calves
+  { name:"Standing Calf Raise (Machine)",         muscle:"Calves",      equipment:"Machine" },
+  { name:"Standing Calf Raise",                   muscle:"Calves",      equipment:"Machine" },
+  { name:"Seated Calf Raise",                     muscle:"Calves",      equipment:"Machine" },
+  { name:"Calf Raise (Leg Press Machine)",        muscle:"Calves",      equipment:"Machine" },
+  // Core
+  { name:"Plank",                                 muscle:"Core",        equipment:"Bodyweight" },
+  { name:"Side Plank",                            muscle:"Core",        equipment:"Bodyweight" },
+  { name:"Cable Crunch",                          muscle:"Core",        equipment:"Cable" },
+  { name:"Hanging Leg Raise",                     muscle:"Core",        equipment:"Bodyweight" },
+  { name:"Ab Wheel Rollout",                      muscle:"Core",        equipment:"Bodyweight" },
+  { name:"Russian Twist",                         muscle:"Core",        equipment:"Bodyweight" },
+  { name:"Torso Rotation (Cable)",                muscle:"Core",        equipment:"Cable" },
+  { name:"Decline Sit-Up",                        muscle:"Core",        equipment:"Bodyweight" },
+  // Cardio
+  { name:"Treadmill",                             muscle:"Cardio",      equipment:"Machine" },
+  { name:"Stationary Bike",                       muscle:"Cardio",      equipment:"Machine" },
+  { name:"Rowing Machine",                        muscle:"Cardio",      equipment:"Machine" },
+  { name:"Stair Climber",                         muscle:"Cardio",      equipment:"Machine" },
+  { name:"Jump Rope",                             muscle:"Cardio",      equipment:"Bodyweight" },
 ];
+// Backwards-compat alias — filters / autocompletes that used string EXERCISE_LIST
+// now get objects; any code that still does `e.toLowerCase()` is updated below.
+const EXERCISE_LIST = EXERCISE_CATALOGUE;
 
 const MEASURE_FIELDS = [
   {key:"chest",label:"Chest",color:C.orange},
@@ -1973,7 +2069,7 @@ function WorkoutModal({ data, updateData, onClose }) {
   }, [exercises, split, note, hasRestored, startTime]);
 
   const filteredEx = exQuery.length >= 1
-    ? EXERCISE_LIST.filter(e => e.toLowerCase().includes(exQuery.toLowerCase())).slice(0, 6)
+    ? EXERCISE_LIST.filter(e => e.name.toLowerCase().includes(exQuery.toLowerCase())).slice(0, 6)
     : [];
 
   function addExercise(name) {
@@ -2248,11 +2344,12 @@ function WorkoutModal({ data, updateData, onClose }) {
               <div style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden" }}>
                 {filteredEx.map((ex, i) => (
                   <div
-                    key={ex}
-                    onClick={() => addExercise(ex)}
-                    style={{ padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.grayLight, borderBottom:i < filteredEx.length-1 ? `1px solid ${C.border}` : "none", cursor:"pointer" }}
+                    key={ex.name}
+                    onClick={() => addExercise(ex.name)}
+                    style={{ padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.grayLight, borderBottom:i < filteredEx.length-1 ? `1px solid ${C.border}` : "none", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}
                   >
-                    {ex}
+                    <span>{ex.name}</span>
+                    <span style={{ fontSize:9, color:C.gray }}>{ex.muscle}</span>
                   </div>
                 ))}
               </div>
@@ -2380,7 +2477,7 @@ function PRModal({ data, updateData, onClose }) {
   const [result, setResult] = useState(null);
 
   const filtered = query.length >= 1
-    ? EXERCISE_LIST.filter(e => e.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
+    ? EXERCISE_LIST.filter(e => e.name.toLowerCase().includes(query.toLowerCase())).slice(0, 6)
     : [];
 
   const existPR = sel ? data.prs.find(p => p.exercise.toLowerCase() === sel.toLowerCase()) : null;
@@ -2448,15 +2545,18 @@ function PRModal({ data, updateData, onClose }) {
         {filtered.length > 0 && !sel && (
           <div style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:10, marginTop:4, overflow:"hidden" }}>
             {filtered.map((ex, i) => {
-              const ep = data.prs.find(p => p.exercise === ex);
+              const ep = data.prs.find(p => p.exercise === ex.name);
               return (
                 <div
-                  key={ex}
-                  onClick={() => { setSel(ex); setQuery(""); }}
-                  style={{ padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.grayLight, borderBottom:i < filtered.length-1 ? `1px solid ${C.border}` : "none", cursor:"pointer", display:"flex", justifyContent:"space-between" }}
+                  key={ex.name}
+                  onClick={() => { setSel(ex.name); setQuery(""); }}
+                  style={{ padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.grayLight, borderBottom:i < filtered.length-1 ? `1px solid ${C.border}` : "none", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}
                 >
-                  <span>{ex}</span>
-                  {ep && <span style={{ color:C.lime, fontSize:10 }}>{ep.weight}×{ep.reps}</span>}
+                  <div>
+                    <span>{ex.name}</span>
+                    <div style={{ fontSize:9, color:C.gray, marginTop:1 }}>{ex.muscle} · {ex.equipment}</div>
+                  </div>
+                  {ep && <span style={{ color:C.lime, fontSize:10, flexShrink:0 }}>{ep.weight}×{ep.reps}</span>}
                 </div>
               );
             })}
@@ -3481,33 +3581,62 @@ function EditSessionModal({ session, onSave, onClose }) {
   );
 }
 
-// ── Exercise picker modal (autocomplete from EXERCISE_LIST; allow custom names) ──
+// ── Exercise picker modal — muscle-filtered catalogue + custom name (V2.1 Chunk 6) ──
+const MUSCLE_GROUPS = ["All","Chest","Back","Shoulders","Biceps","Triceps","Quads","Hamstrings","Glutes","Calves","Core","Cardio"];
+const MUSCLE_COLORS = { Chest:C.orange, Back:C.teal, Shoulders:C.purple, Biceps:C.lime, Triceps:C.amber, Quads:C.blue, Hamstrings:"#FF7043", Glutes:"#EC407A", Calves:"#26C6DA", Core:C.lime, Cardio:C.gray };
+
 function ExercisePickerModal({ current, originalName, onPick, onClose }) {
   const [query, setQuery] = useState("");
+  const [muscleFilter, setMuscleFilter] = useState("All");
   const q = query.trim().toLowerCase();
-  const matches = q
-    ? EXERCISE_LIST.filter(name => name.toLowerCase().includes(q))
-    : EXERCISE_LIST;
-  const canCustom = q.length > 0 && !matches.some(m => m.toLowerCase() === q);
+
+  const matches = EXERCISE_CATALOGUE.filter(ex => {
+    const nameOk = q ? ex.name.toLowerCase().includes(q) : true;
+    const muscleOk = muscleFilter === "All" ? true : ex.muscle === muscleFilter;
+    return nameOk && muscleOk;
+  });
+
+  const canCustom = q.length > 0 && !matches.some(m => m.name.toLowerCase() === q);
+
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center", padding:0 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.teal}60`, borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, width:"100%", maxWidth:480, maxHeight:"82vh", display:"flex", flexDirection:"column" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:C.surface, border:`1px solid ${C.teal}60`, borderTopLeftRadius:16, borderTopRightRadius:16, padding:16, width:"100%", maxWidth:480, maxHeight:"88vh", display:"flex", flexDirection:"column" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
           <div style={{ fontFamily:F.display, fontSize:20, color:C.teal, letterSpacing:2 }}>SWAP EXERCISE</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"transparent", border:"none", color:C.gray, fontSize:22, cursor:"pointer", lineHeight:1, padding:"2px 8px" }}>×</button>
         </div>
         <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginBottom:10 }}>
           Current: <span style={{ color:C.white }}>{current}</span>{current !== originalName ? ` (originally ${originalName})` : ""}
         </div>
+
+        {/* Search */}
         <input
           autoFocus
           type="text"
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Search or type a custom name…"
-          style={{ width:"100%", boxSizing:"border-box", padding:"10px 12px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:8, color:C.white, fontFamily:F.mono, fontSize:13, marginBottom:10, outline:"none" }}
+          style={{ width:"100%", boxSizing:"border-box", padding:"10px 12px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:8, color:C.white, fontFamily:F.mono, fontSize:13, marginBottom:8, outline:"none" }}
         />
-        <div style={{ flex:1, overflowY:"auto", marginBottom:10 }}>
+
+        {/* Muscle group filter chips */}
+        <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:8, marginBottom:8, scrollbarWidth:"none" }}>
+          {MUSCLE_GROUPS.map(mg => (
+            <button key={mg} onClick={() => setMuscleFilter(mg)}
+              style={{
+                flexShrink:0, padding:"4px 10px", borderRadius:20,
+                fontFamily:F.mono, fontSize:9, letterSpacing:0.5, cursor:"pointer",
+                background: muscleFilter === mg ? `${MUSCLE_COLORS[mg] || C.teal}25` : "transparent",
+                border:`1px solid ${muscleFilter === mg ? (MUSCLE_COLORS[mg] || C.teal) : C.border}`,
+                color: muscleFilter === mg ? (MUSCLE_COLORS[mg] || C.teal) : C.gray,
+              }}>
+              {mg.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        {/* Results */}
+        <div style={{ flex:1, overflowY:"auto", marginBottom:8 }}>
           {canCustom && (
             <button onClick={() => onPick(query.trim())} style={{ display:"block", width:"100%", textAlign:"left", padding:"10px 12px", background:`${C.amber}15`, border:`1px solid ${C.amber}60`, borderRadius:8, color:C.amber, fontFamily:F.mono, fontSize:12, cursor:"pointer", marginBottom:6 }}>
               ✏️ Use custom name: <strong>{query.trim()}</strong>
@@ -3516,14 +3645,31 @@ function ExercisePickerModal({ current, originalName, onPick, onClose }) {
           {matches.length === 0 && !canCustom && (
             <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, textAlign:"center", padding:"20px 0" }}>No matches. Type a custom name to use it.</div>
           )}
-          {matches.map(name => (
-            <button key={name} onClick={() => onPick(name)} style={{ display:"flex", width:"100%", textAlign:"left", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", background: name === current ? `${C.teal}15` : "transparent", border:`1px solid ${name === current ? C.teal : C.border}`, borderRadius:8, color: name === current ? C.teal : C.white, fontFamily:F.mono, fontSize:12, cursor:"pointer", marginBottom:4 }}>
-              <span>{name}</span>
-              {name === originalName && <span style={{ fontSize:9, color:C.gray, letterSpacing:1 }}>ORIGINAL</span>}
-              {name === current && name !== originalName && <span style={{ fontSize:9, color:C.teal, letterSpacing:1 }}>CURRENT</span>}
-            </button>
-          ))}
+          {matches.map(ex => {
+            const mColor = MUSCLE_COLORS[ex.muscle] || C.gray;
+            return (
+              <button key={ex.name} onClick={() => onPick(ex.name)}
+                style={{ display:"flex", width:"100%", textAlign:"left", alignItems:"center", justifyContent:"space-between",
+                  padding:"9px 12px",
+                  background: ex.name === current ? `${C.teal}15` : "transparent",
+                  border:`1px solid ${ex.name === current ? C.teal : C.border}`,
+                  borderRadius:8,
+                  color: ex.name === current ? C.teal : C.white,
+                  fontFamily:F.mono, fontSize:12, cursor:"pointer", marginBottom:4 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12 }}>{ex.name}</div>
+                  <div style={{ fontSize:8, color:C.gray, marginTop:1 }}>{ex.equipment}</div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                  <span style={{ fontSize:9, color:mColor, letterSpacing:0.5 }}>{ex.muscle.toUpperCase()}</span>
+                  {ex.name === originalName && <span style={{ fontSize:9, color:C.gray, letterSpacing:1 }}>ORIG</span>}
+                  {ex.name === current && ex.name !== originalName && <span style={{ fontSize:9, color:C.teal, letterSpacing:1 }}>CURR</span>}
+                </div>
+              </button>
+            );
+          })}
         </div>
+
         {current !== originalName && (
           <button onClick={() => onPick(originalName)} style={{ width:"100%", padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontSize:11, letterSpacing:1, cursor:"pointer" }}>
             ↺ REVERT TO ORIGINAL ({originalName})
