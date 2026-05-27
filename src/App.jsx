@@ -494,6 +494,156 @@ Return ONLY valid JSON, no markdown:
 }`;
 }
 
+
+// ── TODAY SCORE — composite daily wellness score (V2.0) ──────────
+// 4 pillars: Training (30) + Fuel (30) + Recovery (20) + Progress (20) = 100
+// Plain-language summary + single highlighted next action.
+// Rule-based (no API call, instant, free). AI layering can come later.
+
+function computePillarTraining(data, today) {
+  const todayDate = new Date(today + "T12:00:00");
+  const dow = todayDate.getDay();
+  const startOfWeek = new Date(todayDate);
+  startOfWeek.setDate(todayDate.getDate() - ((dow + 6) % 7)); // back to Monday
+  const startStr = toLocalDateStr(startOfWeek);
+  const weekWorkouts = (data.workouts || []).filter(w => w.date >= startStr && w.date <= today);
+  let daysDuePassed = 0;
+  for (let i = 0; i <= ((dow + 6) % 7); i++) {
+    const d = new Date(startOfWeek); d.setDate(startOfWeek.getDate() + i);
+    if (SPLIT_MAP[DAYS[d.getDay()]]) daysDuePassed++;
+  }
+  const sessionRate = daysDuePassed > 0 ? Math.min(1, weekWorkouts.length / daysDuePassed) : 1;
+  let pts = sessionRate * 25;
+  const recentPRs = weekWorkouts.reduce((a, w) => a + (w.prs || 0), 0);
+  pts += Math.min(recentPRs * 2.5, 5);
+  return Math.round(Math.min(pts, 30));
+}
+
+function computePillarFuel(data, today, isRest) {
+  const todayMeals = data.meals[today] || { calories:0, protein:0 };
+  const calTarget = isRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
+  const proteinTarget = data.profile.proteinTarget;
+  const hour = new Date().getHours();
+  // Expected fraction of daily intake by hour (5am=0 → 11pm=1, capped)
+  const dayFraction = Math.max(0.15, Math.min(1, (hour - 5) / 18));
+  const expectedCal = calTarget * dayFraction;
+  const expectedProt = proteinTarget * dayFraction;
+  const calRatio = expectedCal > 0 ? Math.min(1, todayMeals.calories / expectedCal) : 0;
+  const protRatio = expectedProt > 0 ? Math.min(1, todayMeals.protein / expectedProt) : 0;
+  return Math.round(calRatio * 15 + protRatio * 15);
+}
+
+function computePillarRecovery(data, today) {
+  const todayEntry = (data.weightLog || []).find(w => w.date === today);
+  const yesterdayDate = (() => {
+    const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 1);
+    return toLocalDateStr(d);
+  })();
+  const ydEntry = (data.weightLog || []).find(w => w.date === yesterdayDate);
+  const lastSleep = todayEntry?.sleep || ydEntry?.sleep || 0;
+  const sleepPts = Math.min(1, lastSleep / 8) * 12;
+  // Weight trend over last ~14 entries — ideal lean-bulk pace 0.3-0.6 lb/wk
+  const weights = (data.weightLog || []).filter(w => w.weight).slice(-14);
+  let trendPts = 4;
+  if (weights.length >= 5) {
+    const first = weights[0], last = weights[weights.length - 1];
+    const days = (new Date(last.date) - new Date(first.date)) / 86400000;
+    if (days > 0) {
+      const lbPerWk = (last.weight - first.weight) / days * 7;
+      if (lbPerWk >= 0.3 && lbPerWk <= 0.6) trendPts = 8;
+      else if (lbPerWk >= 0.1 && lbPerWk <= 0.9) trendPts = 6;
+      else if (lbPerWk >= 0 && lbPerWk <= 1.2) trendPts = 4;
+      else trendPts = 2;
+    }
+  }
+  return Math.round(sleepPts + trendPts);
+}
+
+function computePillarProgress(data, today) {
+  const date30Ago = (() => {
+    const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 30);
+    return toLocalDateStr(d);
+  })();
+  const recentPRs = (data.workouts || []).filter(w => w.date >= date30Ago).reduce((a, w) => a + (w.prs || 0), 0);
+  const prPts = Math.min(recentPRs * 2, 10);
+  const lastWeight = [...(data.weightLog || [])].filter(w => w.weight).pop();
+  const currentW = lastWeight?.weight || 175.8;
+  const phaseTarget = 185;
+  const weightProgress = Math.max(0, Math.min(1, (currentW - 175.8) / (phaseTarget - 175.8)));
+  return Math.round(prPts + weightProgress * 10);
+}
+
+function computeTodayScore(data) {
+  const today = getToday();
+  const dayName = DAYS[new Date().getDay()];
+  const isRest = !SPLIT_MAP[dayName];
+  const training = computePillarTraining(data, today);
+  const fuel = computePillarFuel(data, today, isRest);
+  const recovery = computePillarRecovery(data, today);
+  const progress = computePillarProgress(data, today);
+  const composite = training + fuel + recovery + progress;
+  const label = composite >= 85 ? "DIALLED"
+              : composite >= 70 ? "ON TRACK"
+              : composite >= 55 ? "BUILDING"
+              : "SLIPPING";
+  return { composite, label, pillars: { training, fuel, recovery, progress } };
+}
+
+function generateDailySummary(data) {
+  const today = getToday();
+  const dayName = DAYS[new Date().getDay()];
+  const todayWo = SPLIT_MAP[dayName];
+  const todayMeals = data.meals[today] || { calories:0, protein:0 };
+  const isRest = !todayWo;
+  const calTarget = isRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
+  const proteinTarget = data.profile.proteinTarget;
+  const calRem = Math.max(0, calTarget - todayMeals.calories);
+  const protRem = Math.max(0, proteinTarget - todayMeals.protein);
+  const todayEntry = (data.weightLog || []).find(w => w.date === today);
+  const lastSleep = todayEntry?.sleep || 0;
+  const lines = [];
+  if (lastSleep === 0) lines.push("Log last night's sleep — recovery anchors the rest of the read.");
+  else if (lastSleep >= 8) lines.push(`Sleep was ${lastSleep}h — recovery is dialled.`);
+  else if (lastSleep >= 7) lines.push(`Sleep was ${lastSleep}h — solid, slightly under the 8h target.`);
+  else if (lastSleep >= 6) lines.push(`Sleep was ${lastSleep}h — light. Easy on intensity if you feel flat.`);
+  else lines.push(`Sleep was ${lastSleep}h — rough. Autoregulate; intensity can wait.`);
+  if (calRem > 1500) lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — major gap of ${calRem} kcal left.`);
+  else if (calRem > 500) lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — ${calRem} kcal still to close.`);
+  else if (calRem > 0) lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — nearly there, ${calRem} kcal left.`);
+  else lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — target hit.`);
+  if (protRem > 50) lines.push(`Prioritize protein next meal — ${protRem}g still needed.`);
+  if (todayWo && !(data.workouts || []).some(w => w.date === today)) lines.push(`Today: ${todayWo}. Tap LIFTS to start.`);
+  else if (todayWo) lines.push(`${todayWo} logged — recovery + refuel mode.`);
+  else {
+    const dow = new Date().getDay();
+    for (let i = 1; i <= 7; i++) {
+      const nd = (dow + i) % 7;
+      if (SPLIT_MAP[DAYS[nd]]) { lines.push(`Rest day — next session: ${DAYS[nd]} ${SPLIT_MAP[DAYS[nd]]}.`); break; }
+    }
+  }
+  return lines.join(" ");
+}
+
+function todayOneAction(data) {
+  const today = getToday();
+  const dayName = DAYS[new Date().getDay()];
+  const todayWo = SPLIT_MAP[dayName];
+  const todayMeals = data.meals[today] || { calories:0, protein:0 };
+  const isRest = !todayWo;
+  const calTarget = isRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
+  const proteinTarget = data.profile.proteinTarget;
+  const todayEntry = (data.weightLog || []).find(w => w.date === today);
+  const sleepLogged = !!todayEntry?.sleep;
+  const trainingDoneIfDue = !todayWo || (data.workouts || []).some(w => w.date === today);
+  const calBehind = calTarget - todayMeals.calories;
+  const protBehind = proteinTarget - todayMeals.protein;
+  if (!sleepLogged) return { label: "Log last night's sleep", action: "weight" };
+  if (todayWo && !trainingDoneIfDue) return { label: `Start ${todayWo} on LIFTS`, action: "lifts" };
+  if (protBehind > 30) return { label: `Hit ${protBehind}g more protein at the next meal`, action: "meal" };
+  if (calBehind > 500) return { label: `${calBehind} more kcal today — log your next meal`, action: "meal" };
+  return { label: "Stay the course — you're on it", action: null };
+}
+
 // ── Meal slot model (used by MealModal + meal entry list) ──
 const MEAL_SLOTS = [
   { id: "breakfast",    label: "Breakfast", emoji: "🍳" },
@@ -2374,6 +2524,74 @@ function BackupNagBanner() {
   );
 }
 
+// ── PetalFlower viz: 4 sized petals around a center showing composite score ──
+function PetalFlower({ pillars, composite, color }) {
+  const t = pillars.training / 30;
+  const f = pillars.fuel / 30;
+  const r = pillars.recovery / 20;
+  const p = pillars.progress / 20;
+  function petal(angleDeg, ratio, fillColor) {
+    const angle = angleDeg * Math.PI / 180;
+    const dist = 30;
+    const px = 100 + dist * Math.cos(angle);
+    const py = 100 + dist * Math.sin(angle);
+    const rad = 22 + 28 * ratio;
+    return <ellipse cx={px} cy={py} rx={rad} ry={rad} fill={`${fillColor}66`} stroke={fillColor} strokeWidth="1.5" />;
+  }
+  return (
+    <svg viewBox="0 0 200 200" style={{ width:140, height:140, flexShrink:0 }}>
+      {petal(225, t, "#9D7FFF")}{/* Training - top-left, purple */}
+      {petal(315, f, "#FFB800")}{/* Fuel - top-right, amber */}
+      {petal(135, r, "#4488FF")}{/* Recovery - bottom-left, blue */}
+      {petal(45, p, "#00E5CC")}{/* Progress - bottom-right, teal */}
+      <circle cx="100" cy="100" r="26" fill="#070709" stroke={color} strokeWidth="1.5" />
+      <text x="100" y="108" textAnchor="middle" fontFamily="'Bebas Neue',sans-serif" fontSize="26" fill={color}>{composite}</text>
+    </svg>
+  );
+}
+
+// ── TodayScoreCard — the new HOME centerpiece ──
+function TodayScoreCard({ data, onAction }) {
+  const score = computeTodayScore(data);
+  const summary = generateDailySummary(data);
+  const oneAction = todayOneAction(data);
+  const labelColor = score.composite >= 85 ? C.lime
+                   : score.composite >= 70 ? C.teal
+                   : score.composite >= 55 ? C.amber
+                   : C.orange;
+  const pillarMeta = [
+    { key:"training", label:"TRAINING", max:30, color:"#9D7FFF" },
+    { key:"fuel",     label:"FUEL",     max:30, color:"#FFB800" },
+    { key:"recovery", label:"RECOVERY", max:20, color:"#4488FF" },
+    { key:"progress", label:"PROGRESS", max:20, color:"#00E5CC" },
+  ];
+  return (
+    <div style={{ background:C.surface, border:`1px solid ${labelColor}80`, borderRadius:16, padding:16, marginBottom:14 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:10 }}>
+        <div>
+          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>TODAY SCORE</div>
+          <div style={{ fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:2, lineHeight:1 }}>{score.label}</div>
+        </div>
+        <PetalFlower pillars={score.pillars} composite={score.composite} color={labelColor} />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:4, marginBottom:12 }}>
+        {pillarMeta.map(p => (
+          <div key={p.key} style={{ textAlign:"center", padding:"6px 2px", background:"#0A0A0F", borderRadius:8 }}>
+            <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, letterSpacing:0.5 }}>{p.label}</div>
+            <div style={{ fontFamily:F.display, fontSize:18, color:p.color, marginTop:2, lineHeight:1 }}>{score.pillars[p.key]}<span style={{ fontSize:9, color:C.gray, marginLeft:2 }}>/{p.max}</span></div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.55, marginBottom: oneAction.action ? 12 : 0 }}>{summary}</div>
+      {oneAction.action && onAction && (
+        <button onClick={() => onAction(oneAction.action)} style={{ width:"100%", padding:"11px", background:`${labelColor}18`, border:`1px solid ${labelColor}`, borderRadius:10, color:labelColor, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>
+          → {oneAction.label.toUpperCase()}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
   const t = getToday();
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
@@ -2403,6 +2621,13 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
 
   return (
     <div style={{ padding:"18px 16px" }}>
+
+      {/* V2.0 — Today Score (composite daily read) */}
+      <TodayScoreCard data={data} onAction={(act) => {
+        if (act === "weight") onLogWeight && onLogWeight();
+        else if (act === "meal") onLogMeal && onLogMeal();
+        else if (act === "lifts") onAction && onAction("lifts_tab");
+      }} />
 
       {/* Backup Nag Banner */}
       <BackupNagBanner />
