@@ -4543,19 +4543,21 @@ function GainsTab({ data, onLogMeasurements, onLogMeal, onLogPR, onEditDay }) {
           </div>
         </div>
         {weightData.length >= 2 ? (
-          <ResponsiveContainer width="100%" height={150}>
-            <LineChart data={weightMovingAvg(weightData, 7)}>
-              <XAxis dataKey="date" tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} />
-              <YAxis domain={["dataMin - 2","dataMax + 2"]} tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} width={40} />
-              <Tooltip content={<WeightTooltip />} />
-              <Line type="monotone" dataKey="weight" stroke={C.lime} strokeWidth={1.5} dot={{ fill:C.lime, r:3, strokeWidth:0 }} activeDot={{ r:6, fill:C.lime }} isAnimationActive={false} />
-              <Line type="monotone" dataKey="ma" stroke={C.teal} strokeWidth={2.5} dot={false} strokeOpacity={0.85} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-          <div style={{ display:"flex", justifyContent:"center", gap:14, fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>
-            <span><span style={{ color:C.lime }}>━</span> daily</span>
-            <span><span style={{ color:C.teal }}>━</span> 7-day trend</span>
-          </div>
+          <>
+            <ResponsiveContainer width="100%" height={150}>
+              <LineChart data={weightMovingAvg(weightData, 7)}>
+                <XAxis dataKey="date" tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} />
+                <YAxis domain={["dataMin - 2","dataMax + 2"]} tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} width={40} />
+                <Tooltip content={<WeightTooltip />} />
+                <Line type="monotone" dataKey="weight" stroke={C.lime} strokeWidth={1.5} dot={{ fill:C.lime, r:3, strokeWidth:0 }} activeDot={{ r:6, fill:C.lime }} isAnimationActive={false} />
+                <Line type="monotone" dataKey="ma" stroke={C.teal} strokeWidth={2.5} dot={false} strokeOpacity={0.85} isAnimationActive={false} />
+              </LineChart>
+            </ResponsiveContainer>
+            <div style={{ display:"flex", justifyContent:"center", gap:14, fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>
+              <span><span style={{ color:C.lime }}>━</span> daily</span>
+              <span><span style={{ color:C.teal }}>━</span> 7-day trend</span>
+            </div>
+          </>
         ) : (
           <div style={{ textAlign:"center", color:C.border, fontFamily:F.mono, fontSize:11, padding:"24px 0" }}>
             Log more weigh-ins to see trend
