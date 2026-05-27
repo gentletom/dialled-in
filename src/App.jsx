@@ -475,6 +475,7 @@ RULES:
 6. For multi-component meals, identify EVERY part — don't lump things together
 7. Don't undershoot — when uncertain between two estimates, pick the higher realistic one
 8. Sum ALL items. Verify: total fields MUST equal the sum of item fields
+9. ⚠️ ONLY include foods explicitly mentioned by the user OR clearly visible in the photo. DO NOT assume sides, drinks, condiments, or accompaniments the user didn't mention (e.g. don't add milk to cereal unless they said milk; don't add a side salad to a steak unless they said it). When in doubt, leave it out and flag uncertainty in the "comment" field.
 
 Each item: { "name": "specific food with quantity", "calories": kcal, "protein": g, "carbs": g, "fat": g }
 
@@ -619,7 +620,7 @@ const WORKOUTS = {
       { name:"Shoulder Press (Machine Plates)", sets:"3", reps:"12-15", current:"55 lbs", target:"70 lbs", pr:"55 × 22", note:"Own 15 clean reps before touching 60 lbs." },
       { name:"Lateral Raise (DB or Cable)", sets:"3", reps:"15-20", current:"17.5 lbs", target:"27.5 lbs", pr:null, note:"Slow and controlled. Lead with elbows." },
       { name:"Cable Crunch", sets:"3", reps:"12-15", current:"52.5 lbs", target:"70 lbs", pr:null, note:"Pull from the core, not the arms." },
-      { name:"Plank", sets:"2", reps:"60-90s", current:"66s", target:"90s+", pr:null, note:"Squeeze everything. Hips level." },
+      { name:"Plank", sets:"2", reps:"60-90s", current:"66s", target:"90s+", pr:null, metric:"time", note:"Squeeze everything. Hips level." },
     ],
   },
   "Lower A": {
@@ -627,12 +628,12 @@ const WORKOUTS = {
     duration:"~55 min", note:"RDL is your signature lift. Treat this day like the main event.",
     exercises:[
       { name:"Romanian Deadlift (Barbell)", sets:"4", reps:"8-10", current:"315 lbs", target:"365 lbs by Aug", pr:"315 × 10", note:"Slow and strict. Hips back, feel the hamstring stretch fully." },
-      { name:"Bulgarian Split Squat", sets:"3", reps:"10 each", current:"160-180 lbs", target:"200 lbs", pr:null, note:"3-count eccentric. Quad at parallel or below." },
+      { name:"Bulgarian Split Squat", sets:"3", reps:"10 each", current:"160-180 lbs", target:"200 lbs", pr:null, unilateral:true, note:"3-count eccentric. Quad at parallel or below." },
       { name:"Hip Adduction (Machine)", sets:"3", reps:"10-12", current:"305 lbs", target:"330 lbs", pr:"305 × 6", note:"Full squeeze at close. Don't let it snap back." },
       { name:"Hip Abduction (Machine)", sets:"4", reps:"14-16", current:"240 lbs", target:"265 lbs", pr:"240 × 15", note:"Lean forward slightly for glutes. 5 slow pulses last set." },
       { name:"Lying Leg Curl (Machine)", sets:"3", reps:"12-14", current:"105-120 lbs", target:"135 lbs", pr:null, note:"Slow on the negative. Squeeze hard at top." },
       { name:"Seated Calf Raise", sets:"3", reps:"12-15", current:"210-235 lbs", target:"255 lbs", pr:null, note:"Full stretch at bottom every rep. Pause at top." },
-      { name:"Plank", sets:"2", reps:"60s", current:"66s", target:"90s+", pr:null, note:"Core braced, hold it." },
+      { name:"Plank", sets:"2", reps:"60s", current:"66s", target:"90s+", pr:null, metric:"time", note:"Core braced, hold it." },
     ],
   },
   "Upper B": {
@@ -646,7 +647,7 @@ const WORKOUTS = {
       { name:"Lat Pulldown (Wide Grip)", sets:"3", reps:"10-12", current:"140 lbs", target:"160 lbs", pr:null, note:"Pull elbows down and back." },
       { name:"Preacher Curl (Machine)", sets:"4", reps:"8-10", current:"81-106 lbs", target:"120 lbs", pr:"106 × 6", note:"Peak contraction, full stretch. Last set = absolute failure." },
       { name:"Torso Rotation (Cable)", sets:"3", reps:"20 each", current:"110 lbs", target:"130 lbs", pr:null, note:"Rotate from core, not shoulders." },
-      { name:"Plank", sets:"2", reps:"60s", current:"66s", target:"90s+", pr:null, note:"Lock it in." },
+      { name:"Plank", sets:"2", reps:"60s", current:"66s", target:"90s+", pr:null, metric:"time", note:"Lock it in." },
     ],
   },
   "Lower B": {
@@ -658,7 +659,7 @@ const WORKOUTS = {
       { name:"Hack Squat or Leg Extension", sets:"3", reps:"12-15", current:"building", target:"establish by Jun", pr:null, note:"Quad isolation. Squeeze at top." },
       { name:"Romanian Deadlift (Light)", sets:"3", reps:"12-15", current:"225-250 lbs", target:"keep light", pr:null, note:"Stretch focused today, not strength. 225-250 max." },
       { name:"Standing Calf Raise", sets:"3", reps:"12-15", current:"320-330 lbs", target:"345 lbs", pr:"330 × 11", note:"Full stretch at bottom every rep. Pause at top." },
-      { name:"Plank", sets:"2", reps:"75-90s", current:"84s", target:"90s+", pr:null, note:"End strong." },
+      { name:"Plank", sets:"2", reps:"75-90s", current:"84s", target:"90s+", pr:null, metric:"time", note:"End strong." },
     ],
   },
 };
@@ -1054,31 +1055,36 @@ function MealModal({ data, updateData, onClose, initialDate }) {
   const entries = dayData.entries || [];
   const isHistorical = logDate !== getToday();
 
-  async function analyzePhoto(file) {
-    if (!file) return;
+  async function analyzePhoto(files) {
+    // Accept either a single file (legacy) or an array of files. Empty -> bail.
+    const fileArr = !files ? [] : (Array.isArray(files) ? files : [files]);
+    if (fileArr.length === 0) return;
     setAnalyzing(true);
-    setAiMsg("Analyzing your food...");
+    setAiMsg(fileArr.length > 1 ? `Analyzing ${fileArr.length} photos…` : "Analyzing your food…");
     setItemized(null);
     try {
-      // Downscale to ~800px max to keep payload small and reliable
-      const dataUrl = await processImageFile(file, 800, 0.82);
-      const base64 = dataUrl.split(",")[1];
-      if (!base64) throw new Error("image processing failed");
-
+      // Build content blocks: every image first, then a text block with prompt (and user description if any)
+      const contentBlocks = [];
+      for (const file of fileArr) {
+        const dataUrl = await processImageFile(file, 800, 0.82);
+        const base64 = dataUrl.split(",")[1];
+        if (!base64) throw new Error("image processing failed");
+        contentBlocks.push({ type:"image", source:{ type:"base64", media_type:"image/jpeg", data:base64 } });
+      }
       const ctx = buildMealContext(data);
+      // Combine user description with photos so they reinforce each other
+      const userHint = (textDesc && textDesc.trim()) ? `User description: ${textDesc.trim()}` : null;
+      contentBlocks.push({ type:"text", text: buildMacroPrompt(ctx, userHint) });
       if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: aiHeaders(),
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 800,
+          max_tokens: 1200,
           messages: [{
             role: "user",
-            content: [
-              { type:"image", source:{ type:"base64", media_type:"image/jpeg", data:base64 } },
-              { type:"text", text: buildMacroPrompt(ctx, null) },
-            ],
+            content: contentBlocks,
           }],
         }),
       });
@@ -1470,19 +1476,28 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       </div>
 
       {/* AI Photo scanner */}
-      <label htmlFor="meal-photo-input" style={{ display:"block", cursor:"pointer", marginBottom:16 }}>
-        <div style={{ background:analyzing?"#1A1A22":`${C.teal}15`, border:`1px solid ${analyzing?C.border:C.teal}`, borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ fontSize:20 }}>{analyzing ? "⏳" : "📸"}</div>
-          <div>
-            <div style={{ fontFamily:F.mono, fontSize:11, color:analyzing?C.gray:C.teal }}>
-              {analyzing ? "Analyzing photo..." : "TAP TO SCAN FOOD PHOTO"}
-            </div>
-            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>AI estimates macros · camera or gallery</div>
+      <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+        <label htmlFor="meal-photo-camera" style={{ flex:1, cursor: analyzing ? "default" : "pointer" }}>
+          <div style={{ background: analyzing ? "#1A1A22" : `${C.teal}15`, border:`1px solid ${analyzing ? C.border : C.teal}`, borderRadius:12, padding:"12px 10px", display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+            <div style={{ fontSize:22 }}>{analyzing ? "⏳" : "📷"}</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color: analyzing ? C.gray : C.teal, fontWeight:700, letterSpacing:0.5 }}>CAMERA</div>
           </div>
-        </div>
-      </label>
-      <input id="meal-photo-input" type="file" accept="image/*"
-        onChange={e => { analyzePhoto(e.target.files?.[0]); e.target.value=""; }}
+        </label>
+        <label htmlFor="meal-photo-gallery" style={{ flex:1, cursor: analyzing ? "default" : "pointer" }}>
+          <div style={{ background: analyzing ? "#1A1A22" : `${C.teal}15`, border:`1px solid ${analyzing ? C.border : C.teal}`, borderRadius:12, padding:"12px 10px", display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+            <div style={{ fontSize:22 }}>{analyzing ? "⏳" : "🖼️"}</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color: analyzing ? C.gray : C.teal, fontWeight:700, letterSpacing:0.5 }}>GALLERY · MULTI</div>
+          </div>
+        </label>
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:14, textAlign:"center" }}>
+        AI estimates macros · if you type a description below, it gets combined with the photo for better context
+      </div>
+      <input id="meal-photo-camera" type="file" accept="image/*" capture="environment" disabled={analyzing}
+        onChange={e => { analyzePhoto(Array.from(e.target.files || [])); e.target.value=""; }}
+        style={{ position:"absolute", opacity:0, width:1, height:1, pointerEvents:"none" }} />
+      <input id="meal-photo-gallery" type="file" accept="image/*" multiple disabled={analyzing}
+        onChange={e => { analyzePhoto(Array.from(e.target.files || [])); e.target.value=""; }}
         style={{ position:"absolute", opacity:0, width:1, height:1, pointerEvents:"none" }} />
       {aiMsg && (
         <div style={{ fontFamily:F.mono, fontSize:10, color:aiMsg.startsWith("✓")?C.lime:C.orange, marginBottom:14, padding:"6px 10px", background:"#1A1A22", borderRadius:8 }}>
@@ -2335,7 +2350,7 @@ function BackupNagBanner() {
         </div>
         <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.4 }}>
           {justDone ? "Saved to Downloads. Move it to Drive/Files for safety." :
-            lastDownload ? `Last download was ${age} days ago. Tap to refresh.` : `No backup saved yet. Tap to download.`}
+            lastDownload ? `Your data lives only on this phone. Last safety copy was ${age} days ago.` : `Your data lives only on this phone. Tap BACKUP to save a JSON copy you can restore from later.`}
         </div>
       </div>
       {!justDone && (
@@ -2941,6 +2956,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
   const [finished, setFinished] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
+  const [swappedNames, setSwappedNames] = useState({}); // { [exIdx]: "Standing Calf Raise" } — per-session exercise substitutions
+  const [endedExercises, setEndedExercises] = useState({}); // { [exIdx]: true } — user tapped "end early, fatigued"
   const [expandedEx, setExpandedEx] = useState(null);
   const [hasRestored, setHasRestored] = useState(false); // gate autosave until initial load completes
   const [resumedAt, setResumedAt] = useState(null); // timestamp of restored session, drives banner
@@ -2998,6 +3015,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
               if (parsed.restType === "superset" || parsed.restType === "normal") setRestType(parsed.restType);
             }
             if (typeof parsed.expandedEx === "number") setExpandedEx(parsed.expandedEx);
+            if (parsed.swappedNames && typeof parsed.swappedNames === "object") setSwappedNames(parsed.swappedNames);
+            if (parsed.endedExercises && typeof parsed.endedExercises === "object") setEndedExercises(parsed.endedExercises);
             setResumedAt(parsed.ts);
           }
           // INTENTIONALLY NO DELETION HERE.
@@ -3034,11 +3053,13 @@ function TodayTab({ data, updateData, onLogMeal }) {
       restStartTime,
       restType,
       expandedEx,
+      swappedNames,
+      endedExercises,
     };
     window.storage.set(LIVE_SESSION_KEY, JSON.stringify(payload)).then(() => {
       setLastSaveAt(Date.now());
     }).catch(() => {});
-  }, [sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, hasRestored, actualSplit, finished]);
+  }, [sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, hasRestored, actualSplit, finished, swappedNames, endedExercises]);
 
   // ── Heartbeat save every 5s while session has activity ─────────
   // Defends against mobile browsers cancelling in-flight saves during backgrounding.
@@ -3129,7 +3150,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
     }));
   }
 
-  function toggleSetDone(exIdx, setIdx) {
+  function toggleSetDone(exIdx, setIdx, fillWeight, fillReps) {
     const key = liveKey(exIdx);
     let nowDone = false;
     setLiveSets(prev => ({
@@ -3137,10 +3158,20 @@ function TodayTab({ data, updateData, onLogMeal }) {
       [key]: (prev[key]||[]).map((s, i) => {
         if (i !== setIdx) return s;
         nowDone = !s.done;
-        return { ...s, done: nowDone };
+        const updated = { ...s, done: nowDone };
+        // AUTO-FILL: if checking DONE and weight/reps are empty, fill from prescription
+        // (= "I hit exactly what was prescribed, no manual entry needed")
+        if (nowDone) {
+          if ((!s.weight || s.weight === "") && fillWeight != null && fillWeight !== "") {
+            updated.weight = String(fillWeight);
+          }
+          if ((!s.reps || s.reps === "") && fillReps != null && fillReps !== "") {
+            updated.reps = String(fillReps);
+          }
+        }
+        return updated;
       }),
     }));
-    // Only start rest timer when checking DONE (not unchecking). Use shorter rest for supersets.
     if (nowDone) {
       const ex = wo?.exercises?.[exIdx];
       const isSuperset = !!ex?.supersetGroup;
@@ -3168,6 +3199,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
     setRestType("normal");
     setExpandedEx(null);
     setResumedAt(null);
+    setSwappedNames({});
+    setEndedExercises({});
     // Reset all sets for current workout
     if (wo) {
       setLiveSets(prev => {
@@ -3222,7 +3255,9 @@ function TodayTab({ data, updateData, onLogMeal }) {
       const doneSets = getSets(exIdx).filter(s => s.done);
       if (doneSets.length === 0) return null;
       return {
-        name: ex.name,
+        name: swappedNames[exIdx] || ex.name,
+        originalName: swappedNames[exIdx] ? ex.name : undefined,
+        endedEarly: endedExercises[exIdx] || undefined,
         // Compact text for display: "110×9 (HARD), 110×8 (HARD), 110×9 (FAIL)"
         sets: doneSets.map(s => `${s.weight}×${s.reps}${s.rir ? ` (${s.rir.toUpperCase()})` : ""}`).join(", "),
         // Structured data for AI/analytics consumption
@@ -3231,7 +3266,9 @@ function TodayTab({ data, updateData, onLogMeal }) {
           reps: parseInt(s.reps) || 0,
           rir: s.rir || null,
         })),
-        target: ex.reps, // prescribed rep range, e.g. "8-10"
+        target: ex.reps,
+        metric: ex.metric || "weight_reps",
+        unilateral: ex.unilateral || undefined,
       };
     }).filter(Boolean);
     const newW = { id:`w${Date.now()}`, date:t, name:browseDay, split:browseDay, note:sessionNote?`"${sessionNote}"`:"", duration:dur, volume:Math.round(totalVol), sets:allDone.length, prs:prCount, exercises:exLog };
@@ -3535,15 +3572,38 @@ function TodayTab({ data, updateData, onLogMeal }) {
 
                       {/* Live set logging */}
                       <div style={{ padding:"12px 14px", borderBottom:`1px solid ${C.border}` }}>
-                        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:8, letterSpacing:1 }}>LOG YOUR SETS</div>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+                          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1 }}>LOG YOUR SETS{ex?.unilateral ? " · UNILATERAL" : ""}{ex?.metric === "time" ? " · TIME-BASED" : ""}</div>
+                          <div style={{ display:"flex", gap:6 }}>
+                            <button onClick={() => {
+                              const current = swappedNames[exIdx] || ex.name;
+                              const next = window.prompt(`Swap exercise (e.g. "Standing Calf Raise").\nLeave blank to revert to: ${ex.name}`, current);
+                              if (next === null) return; // cancelled
+                              setSwappedNames(prev => { const n = { ...prev }; if (next.trim() && next.trim() !== ex.name) n[exIdx] = next.trim(); else delete n[exIdx]; return n; });
+                            }} title="Swap this exercise" style={{ fontFamily:F.mono, fontSize:9, padding:"3px 8px", background:"transparent", border:`1px solid ${C.border}`, color:swappedNames[exIdx] ? C.amber : C.gray, borderRadius:5, cursor:"pointer", letterSpacing:0.5 }}>
+                              ⇄ {swappedNames[exIdx] ? "SWAPPED" : "SWAP"}
+                            </button>
+                            <button onClick={() => {
+                              setEndedExercises(prev => ({ ...prev, [exIdx]: !prev[exIdx] }));
+                            }} title="Mark exercise ended early due to fatigue" style={{ fontFamily:F.mono, fontSize:9, padding:"3px 8px", background:"transparent", border:`1px solid ${endedExercises[exIdx] ? C.orange : C.border}`, color:endedExercises[exIdx] ? C.orange : C.gray, borderRadius:5, cursor:"pointer", letterSpacing:0.5 }}>
+                              {endedExercises[exIdx] ? "🏳️ ENDED" : "🏳️ END"}
+                            </button>
+                          </div>
+                        </div>
+                        {swappedNames[exIdx] && (
+                          <div style={{ fontFamily:F.mono, fontSize:10, color:C.amber, marginBottom:8, padding:"6px 10px", background:`${C.amber}15`, borderRadius:6 }}>
+                            Logging as: <strong>{swappedNames[exIdx]}</strong> (was {ex.name}) — PRs track under the swapped name
+                          </div>
+                        )}
                         <div style={{ display:"grid", gridTemplateColumns:"22px 1fr 1fr 34px", gap:6, marginBottom:6 }}>
                           <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>SET</div>
-                          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>LBS</div>
-                          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>REPS</div>
+                          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>{ex?.metric === "time" ? "—" : "LBS"}</div>
+                          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>{ex?.metric === "time" ? "TIME (s)" : (ex?.unilateral ? "REPS (total)" : "REPS")}</div>
                           <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>✓</div>
                         </div>
                         {sets.map((s, setIdx) => {
                           const isLast = setIdx === sets.length - 1;
+                          const isTime = ex?.metric === "time";
                           const rirOptions = [
                             { val:"easy", label:"EASY", color:C.blue, hint:"3+ reps left" },
                             { val:"good", label:"GOOD", color:C.lime, hint:"1-2 reps left" },
@@ -3556,13 +3616,21 @@ function TodayTab({ data, updateData, onLogMeal }) {
                                 <div style={{ fontFamily:F.mono, fontSize:11, color:s.done?C.lime:C.gray, textAlign:"center" }}>
                                   {isLast ? "🔥" : setIdx+1}
                                 </div>
-                                <input value={s.weight} onChange={e => updateLiveSet(exIdx, setIdx, "weight", e.target.value)}
-                                  placeholder={rx.prescribedWeight ? `${rx.prescribedWeight}` : "lbs"} type="number" inputMode="decimal"
-                                  style={{ background:s.done?"#0A1A00":"#1A1A22", border:`1px solid ${s.done?C.lime:C.border}`, borderRadius:8, padding:"8px 10px", color:s.done?C.lime:C.white, fontSize:14, fontFamily:F.mono, outline:"none", width:"100%", boxSizing:"border-box" }} />
+                                <input value={isTime ? "" : s.weight} onChange={e => { if (!isTime) updateLiveSet(exIdx, setIdx, "weight", e.target.value); }}
+                                  placeholder={isTime ? "—" : (rx.prescribedWeight ? `${rx.prescribedWeight}` : "lbs")} type="number" inputMode="decimal"
+                                  disabled={isTime}
+                                  style={{ background: isTime ? "#0A0A0A" : (s.done?"#0A1A00":"#1A1A22"), border:`1px solid ${isTime ? "#222" : (s.done?C.lime:C.border)}`, borderRadius:8, padding:"8px 10px", color: isTime ? C.gray : (s.done?C.lime:C.white), fontSize:14, fontFamily:F.mono, outline:"none", width:"100%", boxSizing:"border-box", opacity: isTime ? 0.4 : 1 }} />
                                 <input value={s.reps} onChange={e => updateLiveSet(exIdx, setIdx, "reps", e.target.value)}
-                                  placeholder={isLast ? "fail→" : (rx.prescribedReps.split("–")[0]||"reps")} type="number" inputMode="numeric"
+                                  placeholder={isTime ? ((rx.prescribedReps || "").replace(/[^0-9-]/g,"") || "sec") : (isLast ? "fail→" : (rx.prescribedReps.split("–")[0]||"reps"))} type="number" inputMode="numeric"
                                   style={{ background:s.done?"#0A1A00":"#1A1A22", border:`1px solid ${s.done?C.lime:C.border}`, borderRadius:8, padding:"8px 10px", color:s.done?C.lime:C.white, fontSize:14, fontFamily:F.mono, outline:"none", width:"100%", boxSizing:"border-box" }} />
-                                <button onClick={() => { if (sessionStarted) toggleSetDone(exIdx, setIdx); }}
+                                <button onClick={() => {
+                                  if (!sessionStarted) return;
+                                  // Top of rep range (e.g. "9-10" -> 10) for auto-fill if user hits checkbox blank
+                                  const rxReps = String(rx.prescribedReps || "");
+                                  const topMatch = rxReps.match(/(\d+)\s*$/);
+                                  const topReps = topMatch ? topMatch[1] : (rxReps.match(/(\d+)/) || [])[1];
+                                  toggleSetDone(exIdx, setIdx, rx.prescribedWeight, topReps);
+                                }}
                                   style={{ width:34, height:34, borderRadius:8, border:`2px solid ${s.done?C.lime:sessionStarted?C.border:"#333"}`, background:s.done?`${C.lime}20`:"transparent", cursor:sessionStarted?"pointer":"default", display:"flex", alignItems:"center", justifyContent:"center" }}>
                                   {s.done && <Check size={14} color={C.lime} />}
                                 </button>
@@ -4857,7 +4925,8 @@ function CoachTab({ data, updateData, onAction }) {
   async function runAnalysis() {
     setAnalyzing(true);
     try {
-      const prompt = buildCoachContext(data) + `\n\nProvide a comprehensive analysis of this athlete's current state. Return ONLY valid JSON (no markdown):
+      if (!getApiKey()) throw new Error("No API key set. Add yours in COACH → AI / API Key.");
+      const prompt = buildCoachContext(data) + `\n\nProvide a comprehensive analysis of this athlete's current state. Return ONLY valid JSON (no markdown, no prose before or after the JSON):
 {
   "overallStatus": "one sentence summary of where they are",
   "insights": [
@@ -4873,26 +4942,38 @@ function CoachTab({ data, updateData, onAction }) {
   "nextSessionFocus": "one specific thing to prioritize in the very next workout",
   "weeklyRating": 7
 }`;
-
-      if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method:"POST",
         headers: aiHeaders(),
         body:JSON.stringify({
           model:"claude-haiku-4-5-20251001",
-          max_tokens:900,
+          max_tokens:2500,
           messages:[{ role:"user", content:prompt }],
         }),
       });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "");
+        throw new Error(`API ${resp.status}: ${(errText || resp.statusText || "").slice(0, 120)}`);
+      }
       const d = await resp.json();
       const text = (d.content||[]).filter(x=>x.type==="text").map(x=>x.text).join("");
-      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      if (!text) throw new Error("Empty response from API");
+      // Robust JSON extraction: strip code fences, then carve from first { to last }
+      let jsonStr = text.replace(/```json|```/g,"").trim();
+      const firstBrace = jsonStr.indexOf("{");
+      const lastBrace = jsonStr.lastIndexOf("}");
+      if (firstBrace >= 0 && lastBrace > firstBrace) {
+        jsonStr = jsonStr.substring(firstBrace, lastBrace + 1);
+      }
+      let parsed;
+      try { parsed = JSON.parse(jsonStr); }
+      catch (pe) { throw new Error(`Parse error: ${(pe.message || "unknown").slice(0,60)} — raw start: ${jsonStr.slice(0,80)}`); }
       const withDate = { ...parsed, analyzedAt:getToday() };
       setAnalysis(withDate);
       setLastAnalysis(withDate);
       await window.storage.set("ft:lastCoachAnalysis", JSON.stringify(withDate));
-    } catch {
-      setAnalysis({ error:"Analysis failed — try again.", insights:[] });
+    } catch (e) {
+      setAnalysis({ error: `Analysis failed — ${(e && e.message) || "unknown"}`, insights:[] });
     }
     setAnalyzing(false);
   }
