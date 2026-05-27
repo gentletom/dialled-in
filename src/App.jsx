@@ -610,40 +610,36 @@ Return ONLY valid JSON, no markdown:
 // Plain-language summary + single highlighted next action.
 // Rule-based (no API call, instant, free). AI layering can come later.
 
-function computePillarTraining(data, today) {
-  const todayDate = new Date(today + "T12:00:00");
-  const dow = todayDate.getDay();
-  const startOfWeek = new Date(todayDate);
-  startOfWeek.setDate(todayDate.getDate() - ((dow + 6) % 7)); // back to Monday
-  const startStr = toLocalDateStr(startOfWeek);
-  const weekWorkouts = (data.workouts || []).filter(w => w.date >= startStr && w.date <= today);
-  let daysDuePassed = 0;
-  for (let i = 0; i <= ((dow + 6) % 7); i++) {
-    const d = new Date(startOfWeek); d.setDate(startOfWeek.getDate() + i);
-    if (SPLIT_MAP[DAYS[d.getDay()]]) daysDuePassed++;
+function computePillarActivity(data, today) {
+  // 0-100: 100 = did everything you could do TODAY for activity
+  const dayName = DAYS[new Date(today + "T12:00:00").getDay()];
+  const isRest = !SPLIT_MAP[dayName];
+  const todayEntry = (data.weightLog || []).find(w => w.date === today);
+  const steps = todayEntry?.steps || 0;
+  if (isRest) {
+    // Rest day: following the plan = 75 base. Steps add up to 25 bonus (wearable placeholder).
+    if (steps > 0) return Math.round(Math.min(100, 50 + (steps / 8000) * 50));
+    return 75;
   }
-  const sessionRate = daysDuePassed > 0 ? Math.min(1, weekWorkouts.length / daysDuePassed) : 1;
-  let pts = sessionRate * 25;
-  const recentPRs = weekWorkouts.reduce((a, w) => a + (w.prs || 0), 0);
-  pts += Math.min(recentPRs * 2.5, 5);
-  return Math.round(Math.min(pts, 30));
+  // Training day
+  const sessionDone = (data.workouts || []).some(w => w.date === today);
+  if (!sessionDone) return 15; // Session due — go log it
+  const recentPRs = (data.workouts || []).filter(w => w.date <= today).slice(-3).reduce((a, w) => a + (w.prs || 0), 0);
+  return Math.round(Math.min(100, 88 + Math.min(recentPRs * 4, 12)));
 }
 
 function computePillarFuel(data, today, isRest) {
+  // 0-100: hit daily kcal target (50%) + protein target (50%) = 100
   const todayMeals = data.meals[today] || { calories:0, protein:0 };
   const calTarget = isRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
   const proteinTarget = data.profile.proteinTarget;
-  const hour = new Date().getHours();
-  // Expected fraction of daily intake by hour (5am=0 → 11pm=1, capped)
-  const dayFraction = Math.max(0.15, Math.min(1, (hour - 5) / 18));
-  const expectedCal = calTarget * dayFraction;
-  const expectedProt = proteinTarget * dayFraction;
-  const calRatio = expectedCal > 0 ? Math.min(1, todayMeals.calories / expectedCal) : 0;
-  const protRatio = expectedProt > 0 ? Math.min(1, todayMeals.protein / expectedProt) : 0;
-  return Math.round(calRatio * 15 + protRatio * 15);
+  const calRatio = calTarget > 0 ? Math.min(1, todayMeals.calories / calTarget) : 0;
+  const protRatio = proteinTarget > 0 ? Math.min(1, todayMeals.protein / proteinTarget) : 0;
+  return Math.round(calRatio * 50 + protRatio * 50);
 }
 
 function computePillarRecovery(data, today) {
+  // 0-100: log sleep (up to 70 pts based on hours, 8h = 70) + weigh in today (30 pts)
   const todayEntry = (data.weightLog || []).find(w => w.date === today);
   const yesterdayDate = (() => {
     const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 1);
@@ -651,80 +647,69 @@ function computePillarRecovery(data, today) {
   })();
   const ydEntry = (data.weightLog || []).find(w => w.date === yesterdayDate);
   const lastSleep = todayEntry?.sleep || ydEntry?.sleep || 0;
-  const sleepPts = Math.min(1, lastSleep / 8) * 12;
-  // Weight trend over last ~14 entries — ideal lean-bulk pace 0.3-0.6 lb/wk
-  const weights = (data.weightLog || []).filter(w => w.weight).slice(-14);
-  let trendPts = 4;
-  if (weights.length >= 5) {
-    const first = weights[0], last = weights[weights.length - 1];
-    const days = (new Date(last.date) - new Date(first.date)) / 86400000;
-    if (days > 0) {
-      const lbPerWk = (last.weight - first.weight) / days * 7;
-      if (lbPerWk >= 0.3 && lbPerWk <= 0.6) trendPts = 8;
-      else if (lbPerWk >= 0.1 && lbPerWk <= 0.9) trendPts = 6;
-      else if (lbPerWk >= 0 && lbPerWk <= 1.2) trendPts = 4;
-      else trendPts = 2;
-    }
-  }
-  return Math.round(sleepPts + trendPts);
+  const sleepPts = lastSleep > 0 ? Math.round(Math.min(1, lastSleep / 8) * 70) : 0;
+  const weightPts = (todayEntry?.weight) ? 30 : 0;
+  return Math.min(100, sleepPts + weightPts);
 }
 
 function computePillarProgress(data, today) {
+  // 0-100: 50 pts from PRs in last 30 days (5 pts each, cap 50) + 50 pts from bulk trajectory
   const date30Ago = (() => {
     const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 30);
     return toLocalDateStr(d);
   })();
   const recentPRs = (data.workouts || []).filter(w => w.date >= date30Ago).reduce((a, w) => a + (w.prs || 0), 0);
-  const prPts = Math.min(recentPRs * 2, 10);
+  const prPts = Math.min(50, recentPRs * 5);
   const lastWeight = [...(data.weightLog || [])].filter(w => w.weight).pop();
   const currentW = lastWeight?.weight || 175.8;
   const phaseTarget = 185;
   const weightProgress = Math.max(0, Math.min(1, (currentW - 175.8) / (phaseTarget - 175.8)));
-  return Math.round(prPts + weightProgress * 10);
+  return Math.round(Math.min(100, prPts + weightProgress * 50));
 }
 
 // ── Pillar definitions — used by PillarInfoDrawer ────────────────────────
 const PILLAR_INFO = {
-  TRAIN: {
-    clr:"#9D7FFF", title:"TRAINING", subtitle:"Weekly session adherence + PRs", maxPts:30,
-    what:"Tracks how consistently you hit your scheduled sessions this week, plus recent PRs. 30/30 = all sessions logged + new PRs this week.",
+  ACT: {
+    clr:"#9D7FFF", title:"ACTIVITY", subtitle:"Training sessions + daily movement",
+    what:"Training days: log your session to hit 88, chase a PR to reach 100. Rest days: 75 base for following the plan — steps from wearable will unlock the full rest-day score soon.",
     tips:["Log today's session in LIFTS","Hit your prescribed sets and reps","Chase any PR — even a rep PR counts"],
-    restNote:"Today is a rest day. Your TRAIN score shows week-to-date adherence. Rest is part of the program — nothing to do here.",
+    restNote:"Rest day — you're doing the right thing. Smart recovery is part of the program. Steps via wearable integration will fully power this ring soon.",
   },
   FUEL: {
-    clr:"#FFB800", title:"FUEL", subtitle:"Daily calorie + protein tracking", maxPts:30,
-    what:"15 pts from calories vs target + 15 pts from protein vs target. Updates in real time as you log meals.",
+    clr:"#FFB800", title:"FUEL", subtitle:"Daily calorie + protein tracking",
+    what:"50% from hitting your calorie target + 50% from hitting your protein target. Hit both by end of day = 100.",
     tips:["Log your next meal in FUEL","Prioritize a protein source — chicken, eggs, shake","Track everything — even small snacks add up"],
     restNote:null,
   },
   RECOV: {
-    clr:"#4488FF", title:"RECOVERY", subtitle:"Sleep quality + weight trend", maxPts:20,
-    what:"12 pts from sleep (target 8h) + 8 pts from weight trend pace. Ideal lean-bulk pace: +0.3–0.6 lb/wk.",
-    tips:["Log last night's sleep on the HOME weight card","Aim for 8h — even 7h costs points","Weigh in daily to keep trend accurate"],
+    clr:"#4488FF", title:"RECOVERY", subtitle:"Sleep quality + daily weigh-in",
+    what:"Up to 70 pts from sleep quality (8 hours = full sleep score) + 30 pts for logging your weight today. Do both = 100.",
+    tips:["Tap LOG TODAY on HOME to log last night's sleep","Aim for 7-9h — 8h is the sweet spot","Weigh in every morning for full recovery points"],
     restNote:null,
   },
   PROG: {
-    clr:"#00E5CC", title:"PROGRESS", subtitle:"PRs + weight toward phase goal", maxPts:20,
-    what:"10 pts from PRs in the last 30 days + 10 pts from weight progress toward your phase target. This is your long game.",
-    tips:["Hit any PR in any lift — volume PRs count","Weigh in daily for an accurate trend","Consistent sessions drive PRs over time"],
+    clr:"#00E5CC", title:"PROGRESS", subtitle:"PRs + bulk trajectory",
+    what:"50 pts from PRs logged in the last 30 days (5 per PR) + 50 pts from weight progress toward your phase goal of 185 lbs. Your long game.",
+    tips:["Hit any PR in any lift — even a rep PR counts","Weigh in daily for an accurate progress picture","Consistent sessions compound into strength gains over time"],
     restNote:null,
   },
 };
 
 function computeTodayScore(data) {
+  // Each pillar is 0-100. Composite = avg of all 4. If you nail everything today = 100.
   const today = getToday();
   const dayName = DAYS[new Date().getDay()];
   const isRest = !SPLIT_MAP[dayName];
-  const training = computePillarTraining(data, today);
+  const activity = computePillarActivity(data, today);
   const fuel = computePillarFuel(data, today, isRest);
   const recovery = computePillarRecovery(data, today);
   const progress = computePillarProgress(data, today);
-  const composite = training + fuel + recovery + progress;
+  const composite = Math.round((activity + fuel + recovery + progress) / 4);
   const label = composite >= 85 ? "DIALLED"
               : composite >= 70 ? "ON TRACK"
               : composite >= 55 ? "BUILDING"
               : "SLIPPING";
-  return { composite, label, pillars: { training, fuel, recovery, progress } };
+  return { composite, label, pillars: { activity, fuel, recovery, progress } };
 }
 
 function generateDailySummary(data) {
@@ -1463,6 +1448,7 @@ function Sheet({ onClose, title, children }) {
 function WeightModal({ data, updateData, onClose }) {
   const [weight, setWeight] = useState("");
   const [sleep, setSleep] = useState("");
+  const [steps, setSteps] = useState("");
 
   async function save() {
     const t = getToday();
@@ -1471,6 +1457,7 @@ function WeightModal({ data, updateData, onClose }) {
       date: t,
       weight: weight ? parseFloat(weight) : ex.weight || null,
       sleep: sleep ? parseFloat(sleep) : ex.sleep || null,
+      steps: steps ? parseInt(steps) : ex.steps || null,
     };
     const updated = [...data.weightLog.filter(w => w.date !== t), entry].sort((a,b) => a.date.localeCompare(b.date));
     await updateData("weightLog", updated);
@@ -1482,6 +1469,7 @@ function WeightModal({ data, updateData, onClose }) {
       <div style={{ display:"flex", flexDirection:"column", gap:14, marginBottom:24 }}>
         <FInput label="Weight (lbs)" value={weight} onChange={setWeight} placeholder="175.8" color={C.lime} />
         <FInput label="Sleep (hours)" value={sleep} onChange={setSleep} placeholder="8" color={C.teal} />
+        <FInput label="Steps (optional)" value={steps} onChange={setSteps} placeholder="8000" color={"#9D7FFF"} />
       </div>
       <SaveBtn onClick={save} />
     </Sheet>
@@ -1667,6 +1655,21 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       const dayBefore = data.meals[logDate] || { entries: [] };
       const existingEntries = dayBefore.entries || [];
       let updatedEntries;
+      // Transform AI-returned items: nest flat micro fields under item.micros
+      const microFields = ["fiber","sugar","sodium","potassium","vitaminD","calcium","iron","zinc"];
+      function nestItemMicros(item) {
+        if (!item) return item;
+        const micros = {};
+        let hasMicros = false;
+        microFields.forEach(function(k) {
+          if (item[k] !== undefined && item[k] !== null) { micros[k] = item[k]; hasMicros = true; }
+        });
+        if (!hasMicros) return item;
+        const clean = Object.assign({}, item);
+        microFields.forEach(function(k) { delete clean[k]; });
+        return Object.assign(clean, { micros });
+      }
+      const nestedItems = itemized ? itemized.map(nestItemMicros) : null;
       if (editingEntryId) {
         // UPDATE existing entry — preserve id, time, and legacy flag
         const original = existingEntries.find(e => e.id === editingEntryId);
@@ -1678,7 +1681,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           carbs: carbN,
           fat: fatN,
           description: desc.trim() || "Meal",
-          items: itemized || null,
+          items: nestedItems,
           slot: slot,
           ...(original?.legacy ? { legacy: true } : {}),
         };
@@ -1693,7 +1696,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           carbs: carbN,
           fat: fatN,
           description: desc.trim() || "Meal",
-          items: itemized || null,
+          items: nestedItems,
           slot: slot,
         };
         updatedEntries = [...existingEntries, newEntry];
@@ -2841,10 +2844,10 @@ function BackupNagBanner() {
 // Each pillar normalized to /100 for display. Composite center circle.
 function QuadrantRings({ pillars, composite, color, onRingTap }) {
   const rings = [
-    { cx:70,  cy:70,  pct: Math.min(100, Math.round(pillars.training / 30 * 100)), clr:"#9D7FFF", label:"TRAIN" },
-    { cx:210, cy:70,  pct: Math.min(100, Math.round(pillars.fuel     / 30 * 100)), clr:"#FFB800", label:"FUEL"  },
-    { cx:70,  cy:210, pct: Math.min(100, Math.round(pillars.recovery / 20 * 100)), clr:"#4488FF", label:"RECOV" },
-    { cx:210, cy:210, pct: Math.min(100, Math.round(pillars.progress / 20 * 100)), clr:"#00E5CC", label:"PROG"  },
+    { cx:70,  cy:70,  pct: Math.min(100, pillars.activity || 0), clr:"#9D7FFF", label:"ACT"   },
+    { cx:210, cy:70,  pct: Math.min(100, pillars.fuel     || 0), clr:"#FFB800", label:"FUEL"  },
+    { cx:70,  cy:210, pct: Math.min(100, pillars.recovery || 0), clr:"#4488FF", label:"RECOV" },
+    { cx:210, cy:210, pct: Math.min(100, pillars.progress || 0), clr:"#00E5CC", label:"PROG"  },
   ];
   const R = 52, CIRC = 2 * Math.PI * R;
   return (
@@ -2868,7 +2871,7 @@ function QuadrantRings({ pillars, composite, color, onRingTap }) {
         );
       })}
       {/* center — decorative only, no number */}
-      <circle cx={140} cy={140} r={18} fill="#07070A" stroke={color} strokeWidth={1.5} />
+      {/* center ring removed */}
     </svg>
   );
 }
@@ -2969,12 +2972,12 @@ function PillarInfoDrawer({ pillar, score, data, onClose }) {
   if (!info) return null;
   const dayName = DAYS[new Date().getDay()];
   const isRest  = !SPLIT_MAP[dayName];
-  const pts = pillar === "TRAIN" ? score.pillars.training
+  const pts = pillar === "ACT"   ? score.pillars.activity
             : pillar === "FUEL"  ? score.pillars.fuel
             : pillar === "RECOV" ? score.pillars.recovery
             : score.pillars.progress;
-  const pct = Math.round(pts / info.maxPts * 100);
-  const showRestNote = pillar === "TRAIN" && isRest && info.restNote;
+  const pct = pts; // each pillar is already 0-100
+  const showRestNote = pillar === "ACT" && isRest && info.restNote;
   return (
     <div style={{ position:"fixed", inset:0, zIndex:950, display:"flex", flexDirection:"column" }} onClick={onClose}>
       <div style={{ flex:1 }} />
@@ -2987,8 +2990,8 @@ function PillarInfoDrawer({ pillar, score, data, onClose }) {
             <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1, marginTop:2 }}>{info.subtitle}</div>
           </div>
           <div style={{ textAlign:"right" }}>
-            <div style={{ fontFamily:F.display, fontSize:40, color:info.clr, lineHeight:1 }}>{pts}</div>
-            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>/ {info.maxPts} pts · {pct}%</div>
+            <div style={{ fontFamily:F.display, fontSize:40, color:info.clr, lineHeight:1 }}>{pct}</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>out of 100</div>
           </div>
         </div>
         {/* Score bar */}
@@ -3019,8 +3022,8 @@ function PillarInfoDrawer({ pillar, score, data, onClose }) {
   );
 }
 
-// ── ScoreTrendChart — 7-day sparkline, tap to expand 30-day (V2.1) ────────
-function ScoreTrendChart() {
+// ── ScoreTrendChart — bar chart, TODAY highlighted, avg comparison (V2.2 Chunk E) ──
+function ScoreTrendChart({ data }) {
   const [history, setHistory] = useState({});
   const [expanded, setExpanded] = useState(false);
 
@@ -3033,7 +3036,6 @@ function ScoreTrendChart() {
       } catch {}
     }
     load();
-    return () => { cancelled = true; };
   }, []);
 
   const today = getToday();
@@ -3045,69 +3047,108 @@ function ScoreTrendChart() {
     dates.push(toLocalDateStr(d));
   }
 
-  const points = dates.map((d, i) => ({ date: d, score: history[d]?.composite ?? null, idx: i }));
-  if (!points.some(p => p.score !== null)) return null;
+  // Use live score for today so the bar updates as you log meals/sleep
+  const liveToday = data ? computeTodayScore(data).composite : null;
 
-  const W = 300, H = 68, PL = 10, PR = 10, PT = 8, PB = 20;
-  const plotW = W - PL - PR, plotH = H - PT - PB;
-  const n = dayCount;
-  const xOf = i => PL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
-  const yOf = s => PT + plotH - Math.min(Math.max(s, 0), 100) / 100 * plotH;
-  const scoreClr = s => s >= 85 ? C.lime : s >= 70 ? C.teal : s >= 55 ? C.amber : C.orange;
-
-  // Segment line, skipping null gaps
-  const segments = [];
-  let seg = [];
-  for (const p of points) {
-    const y = p.score !== null ? yOf(p.score) : null;
-    if (y !== null) seg.push({ x: xOf(p.idx), y, score: p.score, date: p.date });
-    else { if (seg.length) { segments.push([...seg]); seg = []; } }
-  }
-  if (seg.length) segments.push(seg);
-
-  const dayLabels = points.map(p => {
-    const d = new Date(p.date + "T12:00:00");
-    if (expanded) return p.idx % 6 === 0 ? `${d.getMonth()+1}/${d.getDate()}` : null;
-    return ["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()];
+  const points = dates.map((d, i) => {
+    const score = d === today
+      ? (liveToday ?? history[d]?.composite ?? null)
+      : (history[d]?.composite ?? null);
+    return { date:d, score, idx:i, isToday: d === today };
   });
 
+  const validPts = points.filter(p => p.score !== null);
+  if (validPts.length === 0) return null;
+
+  const avg = Math.round(validPts.reduce((s, p) => s + p.score, 0) / validPts.length);
+  const todayScore = points.find(p => p.isToday)?.score;
+  const delta = (todayScore !== null && todayScore !== undefined) ? todayScore - avg : null;
+
+  const scoreClr = s => s >= 85 ? C.lime : s >= 70 ? C.teal : s >= 55 ? C.amber : C.orange;
+
+  // SVG bar chart
+  const W = 340, H = 120, PL = 6, PR = 6, PT = 16, PB = 22;
+  const plotW = W - PL - PR, plotH = H - PT - PB;
+  const gap = plotW / dayCount;
+  const barW = Math.max(8, gap * 0.62);
+  const xOf = i => PL + gap * i + gap / 2;
+  const avgY = PT + plotH - (avg / 100) * plotH;
+
+  const dayLabel = (date, isToday) => {
+    if (isToday) return "NOW";
+    const d = new Date(date + "T12:00:00");
+    if (expanded) {
+      const dom = d.getDate();
+      return dom === 1 || dom % 7 === 0 ? `${d.getMonth()+1}/${dom}` : null;
+    }
+    return ["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()];
+  };
+
   return (
-    <div onClick={() => setExpanded(e => !e)}
-      style={{ background:C.surface, borderRadius:14, padding:"10px 14px 4px", marginBottom:14, cursor:"pointer" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+    <div style={{ background:C.surface, borderRadius:14, padding:"12px 14px 6px", marginBottom:14 }}>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
         <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5 }}>
           {expanded ? "30-DAY TREND" : "7-DAY TREND"}
         </div>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayMid }}>
-          {expanded ? "▲ COLLAPSE" : "▼ EXPAND"}
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {delta !== null && (
+            <div style={{ fontFamily:F.mono, fontSize:11, color: delta >= 0 ? C.lime : C.orange }}>
+              {delta >= 0 ? "↑" : "↓"}{Math.abs(delta)} vs {avg} avg
+            </div>
+          )}
+          <div onClick={() => setExpanded(e => !e)}
+            style={{ fontFamily:F.mono, fontSize:9, color:C.grayMid, cursor:"pointer", padding:"2px 8px", border:`1px solid ${C.border}`, borderRadius:4 }}>
+            {expanded ? "◂" : "▸ 30D"}
+          </div>
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height: expanded ? 100 : 68, display:"block" }}>
-        <line x1={PL} y1={PT+plotH} x2={W-PR} y2={PT+plotH} stroke="#181828" strokeWidth={1}/>
-        <line x1={PL} y1={yOf(50)} x2={W-PR} y2={yOf(50)} stroke="#181828" strokeWidth={0.5} strokeDasharray="3,5"/>
-        {segments.map((seg, si) => seg.length >= 2 && (
-          <path key={`a${si}`}
-            d={seg.map((p,i) => `${i===0?'M':'L'}${p.x},${p.y}`).join(" ")
-              + ` L${seg[seg.length-1].x},${PT+plotH} L${seg[0].x},${PT+plotH} Z`}
-            fill={`${C.teal}15`} />
-        ))}
-        {segments.map((seg, si) => seg.length >= 2 && (
-          <polyline key={`l${si}`}
-            points={seg.map(p => `${p.x},${p.y}`).join(" ")}
-            fill="none" stroke={C.teal} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
-        ))}
-        {points.map((p, i) => p.score !== null && (
-          <circle key={i} cx={xOf(i)} cy={yOf(p.score)}
-            r={p.date === today ? 4.5 : 3}
-            fill={scoreClr(p.score)}
-            stroke={p.date === today ? "#07070A" : "none"}
-            strokeWidth={p.date === today ? 2 : 0} />
-        ))}
-        {dayLabels.map((label, i) => label && (
-          <text key={i} x={xOf(i)} y={H - 4}
-            textAnchor="middle" fontFamily="monospace" fontSize="7.5"
-            fill={points[i].date === today ? C.grayLight : "#444"}>{label}</text>
-        ))}
+      {/* Bar chart */}
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height: expanded ? 130 : 120, display:"block" }}>
+        {/* Avg line */}
+        <line x1={PL} y1={avgY} x2={W-PR} y2={avgY}
+          stroke={C.grayMid} strokeWidth={0.8} strokeDasharray="3,5" opacity={0.6} />
+        <text x={W-PR} y={avgY-3} textAnchor="end" fontFamily="monospace" fontSize="7" fill={C.grayMid} opacity={0.7}>
+          AVG {avg}
+        </text>
+        {/* Bars */}
+        {points.map((p, i) => {
+          const x = xOf(i);
+          const clr = p.isToday ? C.lime : (p.score !== null ? scoreClr(p.score) : "#1a1a2a");
+          const barH = p.score !== null ? Math.max(4, (p.score / 100) * plotH) : 4;
+          const bW = p.isToday ? barW * 1.25 : barW;
+          const opacity = p.isToday ? 1 : (p.score !== null ? 0.6 : 1);
+          return (
+            <g key={i}>
+              <rect x={x - bW/2} y={PT + plotH - barH} width={bW} height={barH}
+                fill={clr} opacity={opacity} rx={3} />
+              {/* Score label above bar */}
+              {p.score !== null && (
+                <text x={x} y={PT + plotH - barH - 3}
+                  textAnchor="middle" fontFamily="monospace"
+                  fontSize={p.isToday ? "9.5" : "7"}
+                  fontWeight={p.isToday ? "bold" : "normal"}
+                  fill={p.isToday ? C.lime : C.grayMid}>
+                  {p.score}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {/* Day labels */}
+        {points.map((p, i) => {
+          const label = dayLabel(p.date, p.isToday);
+          if (!label) return null;
+          return (
+            <text key={i} x={xOf(i)} y={H - 4}
+              textAnchor="middle" fontFamily="monospace"
+              fontSize={p.isToday ? "8.5" : "7"}
+              fontWeight={p.isToday ? "bold" : "normal"}
+              fill={p.isToday ? C.lime : "#444"}>
+              {label}
+            </text>
+          );
+        })}
       </svg>
     </div>
   );
@@ -3158,7 +3199,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
       }} />
 
       {/* V2.1 — 7-day score sparkline (tap to expand 30-day) */}
-      <ScoreTrendChart />
+      <ScoreTrendChart data={data} />
 
       {/* V2.0 — Adaptive coach nudges (rule-based MVP) */}
       {(() => {
