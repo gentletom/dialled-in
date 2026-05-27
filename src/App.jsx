@@ -683,6 +683,34 @@ function computePillarProgress(data, today) {
   return Math.round(prPts + weightProgress * 10);
 }
 
+// ── Pillar definitions — used by PillarInfoDrawer ────────────────────────
+const PILLAR_INFO = {
+  TRAIN: {
+    clr:"#9D7FFF", title:"TRAINING", subtitle:"Weekly session adherence + PRs", maxPts:30,
+    what:"Tracks how consistently you hit your scheduled sessions this week, plus recent PRs. 30/30 = all sessions logged + new PRs this week.",
+    tips:["Log today's session in LIFTS","Hit your prescribed sets and reps","Chase any PR — even a rep PR counts"],
+    restNote:"Today is a rest day. Your TRAIN score shows week-to-date adherence. Rest is part of the program — nothing to do here.",
+  },
+  FUEL: {
+    clr:"#FFB800", title:"FUEL", subtitle:"Daily calorie + protein tracking", maxPts:30,
+    what:"15 pts from calories vs target + 15 pts from protein vs target. Updates in real time as you log meals.",
+    tips:["Log your next meal in FUEL","Prioritize a protein source — chicken, eggs, shake","Track everything — even small snacks add up"],
+    restNote:null,
+  },
+  RECOV: {
+    clr:"#4488FF", title:"RECOVERY", subtitle:"Sleep quality + weight trend", maxPts:20,
+    what:"12 pts from sleep (target 8h) + 8 pts from weight trend pace. Ideal lean-bulk pace: +0.3–0.6 lb/wk.",
+    tips:["Log last night's sleep on the HOME weight card","Aim for 8h — even 7h costs points","Weigh in daily to keep trend accurate"],
+    restNote:null,
+  },
+  PROG: {
+    clr:"#00E5CC", title:"PROGRESS", subtitle:"PRs + weight toward phase goal", maxPts:20,
+    what:"10 pts from PRs in the last 30 days + 10 pts from weight progress toward your phase target. This is your long game.",
+    tips:["Hit any PR in any lift — volume PRs count","Weigh in daily for an accurate trend","Consistent sessions drive PRs over time"],
+    restNote:null,
+  },
+};
+
 function computeTodayScore(data) {
   const today = getToday();
   const dayName = DAYS[new Date().getDay()];
@@ -705,33 +733,46 @@ function generateDailySummary(data) {
   const todayWo = SPLIT_MAP[dayName];
   const todayMeals = data.meals[today] || { calories:0, protein:0 };
   const isRest = !todayWo;
-  const calTarget = isRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
-  const proteinTarget = data.profile.proteinTarget;
-  const calRem = Math.max(0, calTarget - todayMeals.calories);
-  const protRem = Math.max(0, proteinTarget - todayMeals.protein);
+  const calTarget = isRest ? (data.profile?.calorieTarget?.rest||2800) : (data.profile?.calorieTarget?.training||3200);
+  const proteinTarget = data.profile?.proteinTarget || 240;
+  const calRem   = Math.max(0, calTarget - todayMeals.calories);
+  const protRem  = Math.max(0, proteinTarget - todayMeals.protein);
   const todayEntry = (data.weightLog || []).find(w => w.date === today);
-  const lastSleep = todayEntry?.sleep || 0;
-  const lines = [];
-  if (lastSleep === 0) lines.push("Log last night's sleep — recovery anchors the rest of the read.");
-  else if (lastSleep >= 8) lines.push(`Sleep was ${lastSleep}h — recovery is dialled.`);
-  else if (lastSleep >= 7) lines.push(`Sleep was ${lastSleep}h — solid, slightly under the 8h target.`);
-  else if (lastSleep >= 6) lines.push(`Sleep was ${lastSleep}h — light. Easy on intensity if you feel flat.`);
-  else lines.push(`Sleep was ${lastSleep}h — rough. Autoregulate; intensity can wait.`);
-  if (calRem > 1500) lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — major gap of ${calRem} kcal left.`);
-  else if (calRem > 500) lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — ${calRem} kcal still to close.`);
-  else if (calRem > 0) lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — nearly there, ${calRem} kcal left.`);
-  else lines.push(`Fuel: ${todayMeals.calories} / ${calTarget} — target hit.`);
-  if (protRem > 50) lines.push(`Prioritize protein next meal — ${protRem}g still needed.`);
-  if (todayWo && !(data.workouts || []).some(w => w.date === today)) lines.push(`Today: ${todayWo}. Tap LIFTS to start.`);
-  else if (todayWo) lines.push(`${todayWo} logged — recovery + refuel mode.`);
-  else {
+  const lastSleep  = todayEntry?.sleep || 0;
+  const hasWorkout = (data.workouts || []).some(w => w.date === today);
+  function nextSession() {
     const dow = new Date().getDay();
     for (let i = 1; i <= 7; i++) {
       const nd = (dow + i) % 7;
-      if (SPLIT_MAP[DAYS[nd]]) { lines.push(`Rest day — next session: ${DAYS[nd]} ${SPLIT_MAP[DAYS[nd]]}.`); break; }
+      if (SPLIT_MAP[DAYS[nd]]) return DAYS[nd] + " " + SPLIT_MAP[DAYS[nd]];
     }
+    return null;
   }
-  return lines.join(" ");
+  // ── Rest day ──
+  if (isRest) {
+    const next = nextSession();
+    if (lastSleep === 0 && protRem > 80)
+      return `Rest day. Log sleep and hit ${proteinTarget}g protein — recovery is your workout today.${next?" Next: "+next+".":""}`;
+    if (lastSleep > 0 && lastSleep < 7)
+      return `Sleep was ${lastSleep}h — keep intensity low, eat well. ${protRem > 40 ? protRem+"g protein still left." : "Protein on track."}`;
+    if (protRem > 80)
+      return `Rest day — ${protRem}g protein still to go. Hit it before bed to protect your gains.${next?" Next: "+next+".":""}`;
+    if (calRem > 500)
+      return `Rest day — ${calRem} kcal left to fill. Under-fuelling slows recovery.`;
+    return `Rest day dialled.${next?" Next: "+next+".":""} Recovery and fuel on track.`;
+  }
+  // ── Training day ──
+  if (!hasWorkout && todayMeals.calories < 300)
+    return `${todayWo} day. Nothing logged yet — fuel up and get the session done.`;
+  if (!hasWorkout)
+    return `${todayWo} still to do. ${protRem > 0 ? protRem+"g protein left." : "Protein hit."} Get the session in.`;
+  if (protRem > 80)
+    return `${todayWo} done. Recovery window open — ${protRem}g more protein before bed.`;
+  if (calRem > 800)
+    return `${todayWo} logged. ${calRem} kcal left to hit your surplus — keep eating.`;
+  if (calRem <= 0 && protRem <= 20)
+    return `${todayWo} logged and fully fuelled. Dialled.`;
+  return `${todayWo} done. ${protRem > 0 ? protRem+"g protein left." : "Protein on target."} ${calRem > 0 ? calRem+" kcal to fill." : ""}`.trim();
 }
 
 // ── Adaptive nudges (V2.0 MVP coach engine) ──────────────────────
@@ -2798,7 +2839,7 @@ function BackupNagBanner() {
 
 // ── QuadrantRings — Whoop-style 2x2 ring grid, composite center (V2.1) ──
 // Each pillar normalized to /100 for display. Composite center circle.
-function QuadrantRings({ pillars, composite, color }) {
+function QuadrantRings({ pillars, composite, color, onRingTap }) {
   const rings = [
     { cx:70,  cy:70,  pct: Math.min(100, Math.round(pillars.training / 30 * 100)), clr:"#9D7FFF", label:"TRAIN" },
     { cx:210, cy:70,  pct: Math.min(100, Math.round(pillars.fuel     / 30 * 100)), clr:"#FFB800", label:"FUEL"  },
@@ -2811,7 +2852,10 @@ function QuadrantRings({ pillars, composite, color }) {
       {rings.map(({ cx, cy, pct, clr, label }) => {
         const offset = CIRC * (1 - Math.max(0, pct) / 100);
         return (
-          <g key={label}>
+          <g key={label} onClick={() => onRingTap && onRingTap(label)}
+             style={{ cursor: onRingTap ? "pointer" : "default" }}>
+            {/* wider invisible tap target */}
+            <circle cx={cx} cy={cy} r={R+14} fill="transparent" />
             <circle cx={cx} cy={cy} r={R} fill="none" stroke="#18182A" strokeWidth={10} />
             <circle cx={cx} cy={cy} r={R} fill="none" stroke={clr} strokeWidth={10}
               strokeDasharray={CIRC} strokeDashoffset={offset}
@@ -2823,11 +2867,8 @@ function QuadrantRings({ pillars, composite, color }) {
           </g>
         );
       })}
-      <circle cx={140} cy={140} r={36} fill="#07070A" stroke={color} strokeWidth={2} />
-      <text x={140} y={133} textAnchor="middle"
-        fontFamily="'Bebas Neue',sans-serif" fontSize="34" fill={color}>{composite}</text>
-      <text x={140} y={155} textAnchor="middle"
-        fontFamily="monospace" fontSize="11" fill={color} letterSpacing="2">/100</text>
+      {/* center — decorative only, no number */}
+      <circle cx={140} cy={140} r={18} fill="#07070A" stroke={color} strokeWidth={1.5} />
     </svg>
   );
 }
@@ -2839,6 +2880,7 @@ function TodayScoreCard({ data, onAction }) {
   const oneAction = todayOneAction(data);
   const [scoreHistory, setScoreHistory] = useState({});
   const [trend, setTrend] = useState(null);
+  const [activePillar, setActivePillar] = useState(null);
 
   const today = getToday();
 
@@ -2890,8 +2932,8 @@ function TodayScoreCard({ data, onAction }) {
 
   return (
     <div style={{ background:C.surface, border:`1px solid ${labelColor}80`, borderRadius:16, padding:16, marginBottom:14 }}>
-      {/* Compact header row */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+      {/* Header: label + 7d trend */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
         <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5 }}>TODAY SCORE</div>
         {trend && (
           <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayMid, letterSpacing:0.4 }}>
@@ -2900,15 +2942,79 @@ function TodayScoreCard({ data, onAction }) {
           </div>
         )}
       </div>
-      {/* Rings — full-width hero */}
-      <QuadrantRings pillars={score.pillars} composite={score.composite} color={labelColor} />
-      {/* Status label centered below rings */}
-      <div style={{ textAlign:"center", fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:3, marginTop:10, marginBottom: oneAction.action ? 12 : 4 }}>{displayLabel}</div>
+      {/* Big score headline — tap rings below for detail */}
+      <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:12 }}>
+        <div style={{ fontFamily:F.display, fontSize:54, color:labelColor, lineHeight:1, letterSpacing:2 }}>{score.composite}</div>
+        <div style={{ fontFamily:F.display, fontSize:18, color:labelColor, letterSpacing:3, opacity:0.8 }}>{displayLabel}</div>
+      </div>
+      {/* Rings — full-width hero, tap any ring for detail */}
+      <QuadrantRings pillars={score.pillars} composite={score.composite} color={labelColor} onRingTap={setActivePillar} />
+      {/* Tap hint */}
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, textAlign:"center", marginTop:6, letterSpacing:0.8, opacity:0.6 }}>TAP A RING FOR DETAIL</div>
+      {/* Takeaway blurb */}
+      <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.65, margin:"10px 0 12px", padding:"10px 12px", background:"rgba(255,255,255,0.03)", borderRadius:8, borderLeft:`2px solid ${labelColor}40` }}>{summary}</div>
       {oneAction.action && onAction && (
         <button onClick={() => onAction(oneAction.action)} style={{ width:"100%", padding:"11px", background:`${labelColor}18`, border:`1px solid ${labelColor}`, borderRadius:10, color:labelColor, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>
           → {oneAction.label.toUpperCase()}
         </button>
       )}
+      {activePillar && <PillarInfoDrawer pillar={activePillar} score={score} data={data} onClose={() => setActivePillar(null)} />}
+    </div>
+  );
+}
+
+// ── PillarInfoDrawer — bottom-sheet pillar detail (tap any ring) ─────────
+function PillarInfoDrawer({ pillar, score, data, onClose }) {
+  const info = PILLAR_INFO[pillar];
+  if (!info) return null;
+  const dayName = DAYS[new Date().getDay()];
+  const isRest  = !SPLIT_MAP[dayName];
+  const pts = pillar === "TRAIN" ? score.pillars.training
+            : pillar === "FUEL"  ? score.pillars.fuel
+            : pillar === "RECOV" ? score.pillars.recovery
+            : score.pillars.progress;
+  const pct = Math.round(pts / info.maxPts * 100);
+  const showRestNote = pillar === "TRAIN" && isRest && info.restNote;
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:950, display:"flex", flexDirection:"column" }} onClick={onClose}>
+      <div style={{ flex:1 }} />
+      <div style={{ background:C.bg, borderTop:`2px solid ${info.clr}40`, borderRadius:"18px 18px 0 0", padding:"20px 18px 36px", maxWidth:500, width:"100%", margin:"0 auto" }}
+        onClick={function(e) { e.stopPropagation(); }}>
+        {/* Header */}
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:12 }}>
+          <div>
+            <div style={{ fontFamily:F.display, fontSize:24, color:info.clr, letterSpacing:2 }}>{info.title}</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1, marginTop:2 }}>{info.subtitle}</div>
+          </div>
+          <div style={{ textAlign:"right" }}>
+            <div style={{ fontFamily:F.display, fontSize:40, color:info.clr, lineHeight:1 }}>{pts}</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>/ {info.maxPts} pts · {pct}%</div>
+          </div>
+        </div>
+        {/* Score bar */}
+        <div style={{ height:5, background:C.border, borderRadius:3, overflow:"hidden", marginBottom:14 }}>
+          <div style={{ height:"100%", width:pct+"%", background:info.clr, borderRadius:3, transition:"width .4s" }} />
+        </div>
+        {/* What it tracks */}
+        <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.65, marginBottom:14 }}>{info.what}</div>
+        {/* Rest-day note OR tips */}
+        {showRestNote ? (
+          <div style={{ background:info.clr+"18", border:`1px solid ${info.clr}40`, borderRadius:8, padding:"10px 14px", fontFamily:F.mono, fontSize:11, color:info.clr, lineHeight:1.6 }}>{info.restNote}</div>
+        ) : (
+          <div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:8 }}>HOW TO IMPROVE</div>
+            {info.tips.map(function(tip, i) {
+              return (
+                <div key={i} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
+                  <span style={{ color:info.clr, fontFamily:F.mono, fontSize:11, marginTop:1, flexShrink:0 }}>→</span>
+                  <span style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.55 }}>{tip}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={onClose} style={{ width:"100%", marginTop:18, padding:"13px", background:C.surface, border:`1px solid ${info.clr}60`, borderRadius:10, fontFamily:F.mono, fontSize:11, color:info.clr, cursor:"pointer", letterSpacing:1 }}>CLOSE</button>
+      </div>
     </div>
   );
 }
@@ -7489,6 +7595,7 @@ function FuelTab({ data, updateData, onLogMeal }) {
   const [editingItem, setEditingItem] = useState(null);       // {date, idx, item}
   const [expandedDay, setExpandedDay] = useState(null);       // date string in history
   const [chartMacro, setChartMacro]   = useState("kcal");     // "kcal"|"protein"|"carbs"|"fat"
+  const [histView,   setHistView]     = useState("macros");   // "macros"|"micros"
 
   const t = getToday();
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
@@ -7576,11 +7683,12 @@ function FuelTab({ data, updateData, onLogMeal }) {
           {microExpanded && (
             <div style={{ padding:"0 16px 14px" }}>
               {(() => {
-                // Sum micros across items that carry them
+                // Sum micros from entries[].items[] — todayItems (strings) don't carry micros
                 const totals = { fiber:0, sugar:0, sodium:0, potassium:0, vitaminD:0, calcium:0, iron:0, zinc:0 };
                 let hasMicros = false;
-                todayItems.forEach(function(item) {
-                  if (typeof item === "object" && item.micros) {
+                const entryItems = (todayMeals.entries || []).flatMap(function(e) { return e.items || []; });
+                entryItems.forEach(function(item) {
+                  if (item && item.micros) {
                     hasMicros = true;
                     Object.keys(totals).forEach(function(k) { totals[k] += (item.micros[k] || 0); });
                   }
@@ -7691,7 +7799,7 @@ function FuelTab({ data, updateData, onLogMeal }) {
     const days = lastNDays(histRange);
     const chartData = days.slice().reverse().map(function(date) {
       const d = data.meals[date];
-      const label = date.slice(5); // "MM-DD"
+      const label = date.slice(5);
       return { date, label, kcal: d ? Math.round(d.calories) : 0, protein: d ? Math.round(d.protein) : 0, carbs: d ? Math.round(d.carbs) : 0, fat: d ? Math.round(d.fat) : 0 };
     });
     const macroTargets = { kcal: calTarget, protein: protTarget, carbs: carbTarget, fat: fatTarget };
@@ -7700,129 +7808,308 @@ function FuelTab({ data, updateData, onLogMeal }) {
     const activeTarget = macroTargets[chartMacro];
     const activeColor  = macroColors[chartMacro];
 
+    // ── Micro averages across selected range ──
+    const microKeys = ["fiber","sugar","sodium","potassium","vitaminD","calcium","iron","zinc"];
+    const microMeta = [
+      { key:"fiber",     label:"Fiber",     unit:"g",  dv:28,   color:C.teal },
+      { key:"sugar",     label:"Sugar",     unit:"g",  dv:50,   color:C.amber },
+      { key:"sodium",    label:"Sodium",    unit:"mg", dv:2300, color:C.orange },
+      { key:"potassium", label:"Potassium", unit:"mg", dv:3500, color:C.lime },
+      { key:"vitaminD",  label:"Vit D",     unit:"IU", dv:600,  color:C.teal },
+      { key:"calcium",   label:"Calcium",   unit:"mg", dv:1000, color:C.white },
+      { key:"iron",      label:"Iron",      unit:"mg", dv:8,    color:C.orange },
+      { key:"zinc",      label:"Zinc",      unit:"mg", dv:11,   color:"#9D7FFF" },
+    ];
+    const microTotals = {};
+    microKeys.forEach(function(k) { microTotals[k] = 0; });
+    let microDaysWithData = 0;
+    days.forEach(function(date) {
+      const d = data.meals[date];
+      if (!d) return;
+      const items = (d.entries || []).flatMap(function(e) { return e.items || []; });
+      let dayHas = false;
+      items.forEach(function(item) {
+        if (item && item.micros) {
+          dayHas = true;
+          microKeys.forEach(function(k) { microTotals[k] += (item.micros[k] || 0); });
+        }
+      });
+      if (dayHas) microDaysWithData++;
+    });
+    const microAvgs = {};
+    microKeys.forEach(function(k) { microAvgs[k] = microDaysWithData > 0 ? Math.round(microTotals[k] / microDaysWithData) : 0; });
+
+    // ── range + view toggles ──
+    const RangeToggle = () => (
+      <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+        {[7,30].map(function(n) {
+          const active = histRange === n;
+          return (
+            <button key={n} onClick={() => setHistRange(n)}
+              style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:11, color:active?C.lime:C.gray, cursor:"pointer" }}>
+              {n === 7 ? "7 DAYS" : "30 DAYS"}
+            </button>
+          );
+        })}
+      </div>
+    );
+
     return (
       <div>
-        {/* Range toggle */}
+        {/* MACROS / MICROS toggle */}
         <div style={{ display:"flex", gap:6, marginBottom:14 }}>
-          {[7,30].map(function(n) {
-            const active = histRange === n;
+          {["macros","micros"].map(function(v) {
+            const active = histView === v;
             return (
-              <button key={n} onClick={() => setHistRange(n)}
-                style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:11, color:active?C.lime:C.gray, cursor:"pointer" }}>
-                {n === 7 ? "7 DAYS" : "30 DAYS"}
+              <button key={v} onClick={() => setHistView(v)}
+                style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:11, color:active?C.lime:C.gray, cursor:"pointer", letterSpacing:1, textTransform:"uppercase" }}>
+                {v}
               </button>
             );
           })}
         </div>
 
-        {/* Bar chart */}
-        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"14px 10px 10px", marginBottom:12 }}>
-          {/* Macro toggle pills */}
-          <div style={{ display:"flex", gap:5, marginBottom:12, paddingLeft:4, paddingRight:4 }}>
-            {["kcal","protein","carbs","fat"].map(function(m) {
-              const active = chartMacro === m;
-              const clr = macroColors[m];
-              return (
-                <button key={m} onClick={() => setChartMacro(m)}
-                  style={{ flex:1, padding:"7px 0", background:active?clr+"22":"none", border:"1px solid "+(active?clr:C.border), borderRadius:7, fontFamily:F.mono, fontSize:9, color:active?clr:C.gray, cursor:"pointer", letterSpacing:0.5 }}>
-                  {macroLabels[m]}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:0.8, marginBottom:8, paddingLeft:4 }}>
-            <span style={{ color:activeColor }}>{macroLabels[chartMacro]}</span>
-            <span style={{ color:C.border, marginLeft:8 }}>— — target {activeTarget}{chartMacro==="kcal"?" kcal":" g"}</span>
-          </div>
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={chartData} barCategoryGap="20%">
-              <XAxis dataKey="label" tick={{ fontFamily:"monospace", fontSize:9, fill:C.gray }} axisLine={false} tickLine={false} />
-              <Tooltip
-                contentStyle={{ background:C.bg, border:"1px solid "+C.border, borderRadius:8, fontFamily:"monospace", fontSize:11 }}
-                formatter={function(val) { return [val+(chartMacro==="kcal"?" kcal":" g"), macroLabels[chartMacro]]; }}
-                labelStyle={{ color:C.gray }}
-              />
-              <ReferenceLine y={activeTarget} stroke={activeColor} strokeDasharray="4 4" strokeWidth={1} />
-              <Bar dataKey={chartMacro} fill={activeColor} radius={[3,3,0,0]}
-                cell={chartData.map(function(d, i) {
-                  const val = d[chartMacro];
-                  return React.createElement("cell", { key: i, fill: val >= activeTarget ? activeColor : val >= activeTarget*0.8 ? activeColor+"99" : C.border });
+        {/* ═══ MACROS VIEW ═══ */}
+        {histView === "macros" && (
+          <div>
+            <RangeToggle />
+            {/* Macro chart */}
+            <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"14px 10px 10px", marginBottom:12 }}>
+              <div style={{ display:"flex", gap:5, marginBottom:12, paddingLeft:4, paddingRight:4 }}>
+                {["kcal","protein","carbs","fat"].map(function(m) {
+                  const active = chartMacro === m;
+                  const clr = macroColors[m];
+                  return (
+                    <button key={m} onClick={() => setChartMacro(m)}
+                      style={{ flex:1, padding:"7px 0", background:active?clr+"22":"none", border:"1px solid "+(active?clr:C.border), borderRadius:7, fontFamily:F.mono, fontSize:9, color:active?clr:C.gray, cursor:"pointer", letterSpacing:0.5 }}>
+                      {macroLabels[m]}
+                    </button>
+                  );
                 })}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Day-by-day list */}
-        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, overflow:"hidden" }}>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, padding:"12px 16px 10px" }}>DAILY LOG</div>
-          {days.map(function(date) {
-            const d = data.meals[date];
-            const kcal    = d ? Math.round(d.calories) : 0;
-            const protein = d ? Math.round(d.protein)  : 0;
-            const items   = d ? (d.items || []) : [];
-            const isToday = date === t;
-            const isYest  = (() => { const y = new Date(); y.setDate(y.getDate()-1); return date === toLocalDateStr(y); })();
-            const label   = isToday ? "TODAY" : isYest ? "YESTERDAY" : date.slice(5);
-            const pct     = Math.min(100, Math.round((kcal / calTarget) * 100));
-            const expanded = expandedDay === date;
-
-            return (
-              <div key={date} style={{ borderTop:"1px solid "+C.border }}>
-                <button onClick={() => setExpandedDay(expanded ? null : date)}
-                  style={{ width:"100%", padding:"11px 14px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:10, textAlign:"left" }}>
-                  <div style={{ fontFamily:F.mono, fontSize:11, color:isToday?C.lime:C.gray, width:80, flexShrink:0 }}>{label}</div>
-                  <div style={{ flex:1 }}>
-                    <div style={{ height:4, background:C.border, borderRadius:2, overflow:"hidden", marginBottom:3 }}>
-                      <div style={{ height:"100%", width:pct+"%", background:kcal>=calTarget?C.lime:C.teal, borderRadius:2 }} />
-                    </div>
-                    <div style={{ fontFamily:F.mono, fontSize:11, color:C.white }}>
-                      <span style={{ color:kcal>=calTarget?C.lime:C.white, fontWeight:kcal>0?700:400 }}>{kcal > 0 ? kcal+" kcal" : "—"}</span>
-                      {protein > 0 && <span style={{ color:C.gray, marginLeft:8 }}>· {protein}g P</span>}
-                    </div>
-                  </div>
-                  <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{expanded?"▲":"▼"}</div>
-                </button>
-                {expanded && (
-                  <div style={{ padding:"0 14px 12px" }}>
-                    {items.length === 0 ? (
-                      <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, padding:"6px 0" }}>No items logged</div>
-                    ) : (
-                      items.map(function(item, i) {
-                        const nm  = typeof item === "string" ? item : (item.name || "Meal");
-                        const kc  = typeof item === "object" ? Math.round(item.calories||0) : null;
-                        const pr  = typeof item === "object" ? Math.round(item.protein||0)  : null;
-                        const cr  = typeof item === "object" ? Math.round(item.carbs||0)    : null;
-                        const fa  = typeof item === "object" ? Math.round(item.fat||0)      : null;
-                        return (
-                          <div key={i} style={{ padding:"8px 0", borderTop:i===0?"none":"1px solid "+C.border, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
-                            <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontSize:13, color:C.white, marginBottom:kc!=null?2:0 }}>{nm}</div>
-                              {kc != null && (
-                                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>
-                                  <span style={{ color:C.lime }}>{kc} kcal</span>
-                                  {pr!=null && <span>{"  "}{pr}P · {cr}C · {fa}F</span>}
+              </div>
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:0.8, marginBottom:8, paddingLeft:4 }}>
+                <span style={{ color:activeColor }}>{macroLabels[chartMacro]}</span>
+                <span style={{ color:C.border, marginLeft:8 }}>— — target {activeTarget}{chartMacro==="kcal"?" kcal":" g"}</span>
+              </div>
+              <ResponsiveContainer width="100%" height={140}>
+                <BarChart data={chartData} barCategoryGap="20%">
+                  <XAxis dataKey="label" tick={{ fontFamily:"monospace", fontSize:9, fill:C.gray }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    contentStyle={{ background:C.bg, border:"1px solid "+C.border, borderRadius:8, fontFamily:"monospace", fontSize:11 }}
+                    formatter={function(val) { return [val+(chartMacro==="kcal"?" kcal":" g"), macroLabels[chartMacro]]; }}
+                    labelStyle={{ color:C.gray }}
+                  />
+                  <ReferenceLine y={activeTarget} stroke={activeColor} strokeDasharray="4 4" strokeWidth={1} />
+                  <Bar dataKey={chartMacro} fill={activeColor} radius={[3,3,0,0]}
+                    cell={chartData.map(function(d, i) {
+                      const val = d[chartMacro];
+                      return React.createElement("cell", { key: i, fill: val >= activeTarget ? activeColor : val >= activeTarget*0.8 ? activeColor+"99" : C.border });
+                    })}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Daily log */}
+            <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, overflow:"hidden" }}>
+              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, padding:"12px 16px 10px" }}>DAILY LOG</div>
+              {days.map(function(date) {
+                const d = data.meals[date];
+                const kcal    = d ? Math.round(d.calories) : 0;
+                const protein = d ? Math.round(d.protein)  : 0;
+                const items   = d ? (d.items || []) : [];
+                const isToday = date === t;
+                const isYest  = (() => { const y = new Date(); y.setDate(y.getDate()-1); return date === toLocalDateStr(y); })();
+                const label   = isToday ? "TODAY" : isYest ? "YESTERDAY" : date.slice(5);
+                const pct     = Math.min(100, Math.round((kcal / calTarget) * 100));
+                const expanded = expandedDay === date;
+                // micros for this day (from entries)
+                const dayMicros = { fiber:0, sugar:0, sodium:0, potassium:0, vitaminD:0, calcium:0, iron:0, zinc:0 };
+                let dayHasMicros = false;
+                if (d) {
+                  (d.entries || []).flatMap(function(e) { return e.items || []; }).forEach(function(item) {
+                    if (item && item.micros) {
+                      dayHasMicros = true;
+                      Object.keys(dayMicros).forEach(function(k) { dayMicros[k] += (item.micros[k] || 0); });
+                    }
+                  });
+                }
+                return (
+                  <div key={date} style={{ borderTop:"1px solid "+C.border }}>
+                    <button onClick={() => setExpandedDay(expanded ? null : date)}
+                      style={{ width:"100%", padding:"11px 14px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:10, textAlign:"left" }}>
+                      <div style={{ fontFamily:F.mono, fontSize:11, color:isToday?C.lime:C.gray, width:80, flexShrink:0 }}>{label}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ height:4, background:C.border, borderRadius:2, overflow:"hidden", marginBottom:3 }}>
+                          <div style={{ height:"100%", width:pct+"%", background:kcal>=calTarget?C.lime:C.teal, borderRadius:2 }} />
+                        </div>
+                        <div style={{ fontFamily:F.mono, fontSize:11, color:C.white }}>
+                          <span style={{ color:kcal>=calTarget?C.lime:C.white, fontWeight:kcal>0?700:400 }}>{kcal > 0 ? kcal+" kcal" : "—"}</span>
+                          {protein > 0 && <span style={{ color:C.gray, marginLeft:8 }}>· {protein}g P</span>}
+                          {dayHasMicros && <span style={{ color:C.teal, marginLeft:8, fontSize:9 }}>· micros</span>}
+                        </div>
+                      </div>
+                      <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{expanded?"▲":"▼"}</div>
+                    </button>
+                    {expanded && (
+                      <div style={{ padding:"0 14px 12px" }}>
+                        {items.length === 0 ? (
+                          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, padding:"6px 0" }}>No items logged</div>
+                        ) : (
+                          items.map(function(item, i) {
+                            const nm  = typeof item === "string" ? item : (item.name || "Meal");
+                            const kc  = typeof item === "object" ? Math.round(item.calories||0) : null;
+                            const pr  = typeof item === "object" ? Math.round(item.protein||0)  : null;
+                            const cr  = typeof item === "object" ? Math.round(item.carbs||0)    : null;
+                            const fa  = typeof item === "object" ? Math.round(item.fat||0)      : null;
+                            return (
+                              <div key={i} style={{ padding:"8px 0", borderTop:i===0?"none":"1px solid "+C.border, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+                                <div style={{ flex:1, minWidth:0 }}>
+                                  <div style={{ fontSize:13, color:C.white, marginBottom:kc!=null?2:0 }}>{nm}</div>
+                                  {kc != null && (
+                                    <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>
+                                      <span style={{ color:C.lime }}>{kc} kcal</span>
+                                      {pr!=null && <span>{"  "}{pr}P · {cr}C · {fa}F</span>}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                            <div style={{ display:"flex", gap:4, flexShrink:0 }}>
-                              {typeof item === "object" && (
-                                <button onClick={() => setEditingItem({ date, idx:i, item })}
-                                  style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:9, color:C.gray }}>✏️</button>
-                              )}
-                              <button onClick={() => deleteMealItem(date, i)}
-                                style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:9, color:C.orange }}>🗑</button>
+                                <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                                  {typeof item === "object" && (
+                                    <button onClick={() => setEditingItem({ date, idx:i, item })}
+                                      style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:9, color:C.gray }}>✏️</button>
+                                  )}
+                                  <button onClick={() => deleteMealItem(date, i)}
+                                    style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:9, color:C.orange }}>🗑</button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                        {/* Expandable micro section for this day */}
+                        {dayHasMicros && (
+                          <div style={{ marginTop:8, borderTop:"1px solid "+C.border, paddingTop:8 }}>
+                            <div style={{ fontFamily:F.mono, fontSize:10, color:C.teal, letterSpacing:1, marginBottom:8 }}>MICROS</div>
+                            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"6px 14px" }}>
+                              {microMeta.map(function(m) {
+                                const val = Math.round(dayMicros[m.key]);
+                                if (val === 0) return null;
+                                const pct2 = Math.min(100, Math.round((val / m.dv) * 100));
+                                return (
+                                  <div key={m.key}>
+                                    <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
+                                      <span style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>{m.label}</span>
+                                      <span style={{ fontFamily:F.mono, fontSize:10, color:m.color }}>{val}{m.unit}</span>
+                                    </div>
+                                    <div style={{ height:2, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                                      <div style={{ height:"100%", width:pct2+"%", background:m.color, borderRadius:2 }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
-                        );
-                      })
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ MICROS VIEW ═══ */}
+        {histView === "micros" && (
+          <div>
+            <RangeToggle />
+            <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"16px 16px 14px", marginBottom:12 }}>
+              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>AVG / DAY</div>
+              {microDaysWithData === 0 ? (
+                <div style={{ textAlign:"center", padding:"20px 0" }}>
+                  <div style={{ fontFamily:F.mono, fontSize:12, color:C.gray }}>No micro data yet in this range</div>
+                  <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, opacity:0.6, marginTop:4, lineHeight:1.5 }}>Use AI meal scan or photo log<br/>to auto-populate micros going forward</div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginBottom:14, opacity:0.7 }}>Based on {microDaysWithData} day{microDaysWithData!==1?"s":""} with micro data</div>
+                  {microMeta.map(function(m) {
+                    const avg = microAvgs[m.key];
+                    const pct2 = Math.min(100, Math.round((avg / m.dv) * 100));
+                    return (
+                      <div key={m.key} style={{ marginBottom:12 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+                          <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
+                            <span style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1 }}>{m.label}</span>
+                            <span style={{ fontFamily:F.display, fontSize:20, color:m.color }}>{avg}</span>
+                            <span style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{m.unit}</span>
+                          </div>
+                          <span style={{ fontFamily:F.mono, fontSize:11, color:pct2>=80?m.color:C.gray, fontWeight:700 }}>{pct2}%</span>
+                        </div>
+                        <div style={{ height:5, background:C.border, borderRadius:3, overflow:"hidden" }}>
+                          <div style={{ height:"100%", width:pct2+"%", background:m.color, borderRadius:3 }} />
+                        </div>
+                        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2, opacity:0.6 }}>DV: {m.dv}{m.unit}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            {/* Per-day micro log */}
+            <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, overflow:"hidden" }}>
+              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, padding:"12px 16px 10px" }}>DAILY MICRO LOG</div>
+              {days.map(function(date) {
+                const d = data.meals[date];
+                const isToday = date === t;
+                const isYest  = (() => { const y = new Date(); y.setDate(y.getDate()-1); return date === toLocalDateStr(y); })();
+                const label   = isToday ? "TODAY" : isYest ? "YESTERDAY" : date.slice(5);
+                const dayMicro = { fiber:0, sugar:0, sodium:0, potassium:0, vitaminD:0, calcium:0, iron:0, zinc:0 };
+                let hasMicro = false;
+                if (d) {
+                  (d.entries || []).flatMap(function(e) { return e.items || []; }).forEach(function(item) {
+                    if (item && item.micros) {
+                      hasMicro = true;
+                      Object.keys(dayMicro).forEach(function(k) { dayMicro[k] += (item.micros[k] || 0); });
+                    }
+                  });
+                }
+                const expanded = expandedDay === date;
+                return (
+                  <div key={date} style={{ borderTop:"1px solid "+C.border }}>
+                    <button onClick={() => setExpandedDay(expanded ? null : date)}
+                      style={{ width:"100%", padding:"11px 14px", background:"none", border:"none", cursor:"pointer", display:"flex", alignItems:"center", gap:10, textAlign:"left" }}>
+                      <div style={{ fontFamily:F.mono, fontSize:11, color:isToday?C.lime:C.gray, width:80, flexShrink:0 }}>{label}</div>
+                      <div style={{ flex:1, fontFamily:F.mono, fontSize:11, color:hasMicro?C.white:C.gray }}>
+                        {hasMicro ? `${Math.round(dayMicro.fiber)}g fiber · ${Math.round(dayMicro.sodium)}mg Na · ${Math.round(dayMicro.potassium)}mg K` : "—"}
+                      </div>
+                      <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{expanded?"▲":"▼"}</div>
+                    </button>
+                    {expanded && hasMicro && (
+                      <div style={{ padding:"0 14px 14px" }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"8px 16px" }}>
+                          {microMeta.map(function(m) {
+                            const val = Math.round(dayMicro[m.key]);
+                            const pct2 = Math.min(100, Math.round((val / m.dv) * 100));
+                            return (
+                              <div key={m.key}>
+                                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+                                  <span style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>{m.label}</span>
+                                  <span style={{ fontFamily:F.mono, fontSize:11, color:m.color }}>{val}{m.unit}</span>
+                                </div>
+                                <div style={{ height:3, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                                  <div style={{ height:"100%", width:pct2+"%", background:m.color, borderRadius:2 }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
