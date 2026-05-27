@@ -1134,7 +1134,7 @@ const MEASURE_FIELDS = [
 ];
 
 // ── UI Primitives ─────────────────────────────────────────────────
-function Card({ children, style, highlight }) {
+function Card({ children, style, highlight, ...rest }) {
   return (
     <div style={{
       background: C.surface,
@@ -1143,7 +1143,7 @@ function Card({ children, style, highlight }) {
       padding: 16,
       marginBottom: 12,
       ...style,
-    }}>
+    }} {...rest}>
       {children}
     </div>
   );
@@ -3052,31 +3052,6 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
           <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:6 }}>Target → 8 hrs</div>
         </Card>
       </div>
-
-      <Card>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-          <SL>Today's Fuel</SL>
-          <SBtn onClick={onLogMeal}>+ ADD MEAL</SBtn>
-        </div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:14 }}>
-          {macros.map(m => (
-            <div key={m.label} style={{ textAlign:"center" }}>
-              <div style={{ fontFamily:F.mono, fontSize:16, fontWeight:600, color:(m.val / m.target) >= 0.9 ? m.color : C.white }}>{m.val}</div>
-              <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:2 }}>{m.label}</div>
-              <div style={{ fontFamily:F.mono, fontSize:9, color:C.borderHi, marginTop:1 }}>/{m.target}</div>
-            </div>
-          ))}
-        </div>
-        {macros.map(m => (
-          <div key={m.label} style={{ marginBottom:6 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:3 }}>
-              <span>{m.label}</span>
-              <span>{Math.round((m.val / m.target) * 100)}%</span>
-            </div>
-            <MBar value={m.val} target={m.target} color={m.color} />
-          </div>
-        ))}
-      </Card>
 
       <Card highlight={!!todayWo} style={{ background: todayWo ? "#080E1A" : C.surface }}>
         <SL>{todayWo ? "⚡ Today's Session" : "🧘 Today"}</SL>
