@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
 import { Dumbbell, Utensils, TrendingUp, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check } from "lucide-react";
 
 // ── Storage helpers ───────────────────────────────────────────────
@@ -4459,6 +4459,51 @@ function LiftsTab({ data, onLogWorkout, onLogPR }) {
 }
 
 // ── GAINS Tab ─────────────────────────────────────────────────────
+// ── GAINS sparkline helpers (V2.0) ──
+function bestSetOneRM(workout, exerciseNameSubstr) {
+  if (!workout || !Array.isArray(workout.exercises)) return null;
+  const ex = workout.exercises.find(e => (e.name || "").toLowerCase().includes(exerciseNameSubstr.toLowerCase()));
+  if (!ex || !Array.isArray(ex.setsData)) return null;
+  let best = null;
+  ex.setsData.forEach(s => {
+    const w = parseFloat(s.weight) || 0, r = parseInt(s.reps) || 0;
+    if (w <= 0 || r <= 0) return;
+    const oneRM = calc1RM(w, r);
+    if (!best || oneRM > best.oneRM) best = { oneRM, weight: w, reps: r };
+  });
+  return best;
+}
+
+function progressionFor(workouts, exerciseNameSubstr) {
+  return (workouts || [])
+    .slice()
+    .reverse() // oldest first for chart
+    .map(w => ({ date: w.date, best: bestSetOneRM(w, exerciseNameSubstr) }))
+    .filter(p => p.best && p.best.oneRM > 0)
+    .map(p => ({ date: p.date.slice(5), oneRM: p.best.oneRM, weight: p.best.weight, reps: p.best.reps }));
+}
+
+function last14DaysFuel(meals, today) {
+  const out = [];
+  const d0 = new Date(today + "T12:00:00");
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(d0); d.setDate(d0.getDate() - i);
+    const dateStr = toLocalDateStr(d);
+    const m = (meals || {})[dateStr] || { calories: 0, protein: 0 };
+    out.push({ date: dateStr.slice(5), kcal: Math.round(m.calories || 0), protein: Math.round(m.protein || 0) });
+  }
+  return out;
+}
+
+function weightMovingAvg(weightData, windowSize) {
+  return weightData.map((point, idx) => {
+    const start = Math.max(0, idx - windowSize + 1);
+    const slice = weightData.slice(start, idx + 1);
+    const avg = slice.reduce((a, p) => a + p.weight, 0) / slice.length;
+    return { ...point, ma: Math.round(avg * 10) / 10 };
+  });
+}
+
 function GainsTab({ data, onLogMeasurements, onLogMeal, onLogPR, onEditDay }) {
   const t = getToday();
   const weightData = data.weightLog.filter(w => w.weight).map(w => ({ date:w.date.slice(5), weight:w.weight }));
@@ -4498,20 +4543,91 @@ function GainsTab({ data, onLogMeasurements, onLogMeal, onLogPR, onEditDay }) {
           </div>
         </div>
         {weightData.length >= 2 ? (
-          <ResponsiveContainer width="100%" height={130}>
-            <LineChart data={weightData}>
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={weightMovingAvg(weightData, 7)}>
               <XAxis dataKey="date" tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} />
-              <YAxis domain={["dataMin - 3","dataMax + 3"]} tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} width={40} />
+              <YAxis domain={["dataMin - 2","dataMax + 2"]} tick={{ fill:C.gray, fontSize:10, fontFamily:"monospace" }} axisLine={false} tickLine={false} width={40} />
               <Tooltip content={<WeightTooltip />} />
-              <Line type="monotone" dataKey="weight" stroke={C.lime} strokeWidth={2} dot={{ fill:C.lime, r:4, strokeWidth:0 }} activeDot={{ r:6, fill:C.lime }} />
+              <Line type="monotone" dataKey="weight" stroke={C.lime} strokeWidth={1.5} dot={{ fill:C.lime, r:3, strokeWidth:0 }} activeDot={{ r:6, fill:C.lime }} isAnimationActive={false} />
+              <Line type="monotone" dataKey="ma" stroke={C.teal} strokeWidth={2.5} dot={false} strokeOpacity={0.85} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
+          <div style={{ display:"flex", justifyContent:"center", gap:14, fontFamily:F.mono, fontSize:9, color:C.gray, marginTop:4 }}>
+            <span><span style={{ color:C.lime }}>━</span> daily</span>
+            <span><span style={{ color:C.teal }}>━</span> 7-day trend</span>
+          </div>
         ) : (
           <div style={{ textAlign:"center", color:C.border, fontFamily:F.mono, fontSize:11, padding:"24px 0" }}>
             Log more weigh-ins to see trend
           </div>
         )}
       </Card>
+
+      {/* V2.0 — PR Progression card (key lifts trajectory) */}
+      {(() => {
+        const keyLifts = [
+          { label:"Incline Bench", substr:"Incline Bench", color:"#4488FF" },
+          { label:"RDL",            substr:"Romanian Deadlift", color:"#00E5CC" },
+          { label:"Shoulder Press", substr:"Shoulder Press", color:"#9D7FFF" },
+        ];
+        const tracks = keyLifts.map(k => ({ ...k, data: progressionFor(data.workouts, k.substr) }));
+        const anyData = tracks.some(t => t.data.length >= 2);
+        if (!anyData) return null;
+        return (
+          <Card>
+            <SL>📈 PR Trajectory</SL>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:10 }}>estimated 1RM from best set per session</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {tracks.map(t => (
+                <div key={t.label}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                    <div style={{ fontFamily:F.mono, fontSize:11, color:t.color, letterSpacing:0.5 }}>{t.label}</div>
+                    <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>
+                      {t.data.length >= 2 ? `${t.data[0].oneRM} → ${t.data[t.data.length-1].oneRM} est 1RM` : t.data.length === 1 ? `${t.data[0].oneRM} est 1RM (1 session)` : "no data yet"}
+                    </div>
+                  </div>
+                  {t.data.length >= 2 ? (
+                    <ResponsiveContainer width="100%" height={50}>
+                      <LineChart data={t.data} margin={{ top:4, right:6, bottom:0, left:6 }}>
+                        <Line type="monotone" dataKey="oneRM" stroke={t.color} strokeWidth={2} dot={{ fill:t.color, r:2.5, strokeWidth:0 }} isAnimationActive={false} />
+                        <Tooltip contentStyle={{ background:"#111", border:`1px solid ${C.border}`, borderRadius:8, fontSize:11 }} labelStyle={{ color:C.gray, fontFamily:"monospace" }} formatter={(v, n, p) => [`${v} est 1RM · ${p.payload.weight}×${p.payload.reps}`, ""]} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, padding:"6px 0" }}>Log {t.label} at least twice to see trajectory</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
+
+      {/* V2.0 — 14-Day Fuel Pacing card (kcal + protein vs target) */}
+      {(() => {
+        const fuel = last14DaysFuel(data.meals, t);
+        const hasAny = fuel.some(d => d.kcal > 0);
+        if (!hasAny) return null;
+        return (
+          <Card>
+            <SL>🍽️ 14-Day Fuel</SL>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:8 }}>daily kcal · target line at training-day goal</div>
+            <ResponsiveContainer width="100%" height={120}>
+              <ComposedChart data={fuel} margin={{ top:8, right:6, bottom:0, left:6 }}>
+                <XAxis dataKey="date" tick={{ fill:C.gray, fontSize:9, fontFamily:"monospace" }} axisLine={false} tickLine={false} interval={2} />
+                <YAxis tick={{ fill:C.gray, fontSize:9, fontFamily:"monospace" }} axisLine={false} tickLine={false} width={36} />
+                <Tooltip contentStyle={{ background:"#111", border:`1px solid ${C.border}`, borderRadius:8, fontSize:11 }} labelStyle={{ color:C.gray, fontFamily:"monospace" }} />
+                <ReferenceLine y={calTarget} stroke={C.lime} strokeDasharray="3 3" strokeOpacity={0.6} />
+                <Bar dataKey="kcal" fill={C.lime} fillOpacity={0.7} />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div style={{ display:"flex", justifyContent:"space-between", marginTop:8, fontFamily:F.mono, fontSize:10 }}>
+              <span style={{ color:C.gray }}>14d avg kcal: <span style={{ color:C.lime }}>{Math.round(fuel.reduce((a,d)=>a+d.kcal,0)/14)}</span></span>
+              <span style={{ color:C.gray }}>14d avg protein: <span style={{ color:C.teal }}>{Math.round(fuel.reduce((a,d)=>a+d.protein,0)/14)}g</span></span>
+            </div>
+          </Card>
+        );
+      })()}
 
       <Card>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
