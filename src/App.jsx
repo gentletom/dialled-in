@@ -586,17 +586,18 @@ RULES:
 8. Sum ALL items. Verify: total fields MUST equal the sum of item fields
 9. ⚠️ ONLY include foods explicitly mentioned by the user OR clearly visible in the photo. DO NOT assume sides, drinks, condiments, or accompaniments the user didn't mention (e.g. don't add milk to cereal unless they said milk; don't add a side salad to a steak unless they said it). When in doubt, leave it out and flag uncertainty in the "comment" field.
 
-Each item: { "name": "specific food with quantity", "calories": kcal, "protein": g, "carbs": g, "fat": g }
+Each item: { "name": "specific food with quantity", "calories": kcal, "protein": g, "carbs": g, "fat": g, "fiber": g_or_null, "sugar": g_or_null, "sodium": mg_or_null, "potassium": mg_or_null, "vitaminD": mcg_or_null, "calcium": mg_or_null, "iron": mg_or_null, "zinc": mg_or_null }
 
 ${foodInput ? `\nFOOD: ${foodInput}` : "\nAnalyze the attached food photo."}
 
 Return ONLY valid JSON, no markdown:
 {
-  "items": [{"name": "...", "calories": N, "protein": N, "carbs": N, "fat": N}, ...],
+  "items": [{"name": "...", "calories": N, "protein": N, "carbs": N, "fat": N, "fiber": N_or_null, "sugar": N_or_null, "sodium": N_or_null, "potassium": N_or_null, "vitaminD": N_or_null, "calcium": N_or_null, "iron": N_or_null, "zinc": N_or_null}, ...],
   "calories": <sum of item calories>,
   "protein": <sum of item protein>,
   "carbs": <sum of item carbs>,
   "fat": <sum of item fat>,
+  "micros": { "fiber": N_or_null, "sugar": N_or_null, "sodium": N_or_null, "potassium": N_or_null, "vitaminD": N_or_null, "calcium": N_or_null, "iron": N_or_null, "zinc": N_or_null },
   "description": "short meal label (e.g. 'Breakfast: pancakes + fruit + shake')",
   "slot": "<exactly one of: breakfast | lunch | snack | pre_workout | post_workout | dinner — infer from text ('breakfast', 'lunch', 'pre-workout' wins) else from typical time of day>",
   "comment": "one sentence: how this fits today's targets, what's left to hit"
@@ -1498,7 +1499,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
         headers: aiHeaders(),
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 1200,
+          max_tokens: 1600,
           messages: [{
             role: "user",
             content: contentBlocks,
@@ -1547,7 +1548,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
         headers: aiHeaders(),
         body: JSON.stringify({
           model: "claude-haiku-4-5-20251001",
-          max_tokens: 800,
+          max_tokens: 1000,
           messages: [{
             role: "user",
             content: buildMacroPrompt(ctx, textDesc),
@@ -2799,34 +2800,34 @@ function BackupNagBanner() {
 // Each pillar normalized to /100 for display. Composite center circle.
 function QuadrantRings({ pillars, composite, color }) {
   const rings = [
-    { cx:42,  cy:42,  pct: Math.min(100, Math.round(pillars.training / 30 * 100)), clr:"#9D7FFF", label:"TRAIN" },
-    { cx:128, cy:42,  pct: Math.min(100, Math.round(pillars.fuel     / 30 * 100)), clr:"#FFB800", label:"FUEL"  },
-    { cx:42,  cy:128, pct: Math.min(100, Math.round(pillars.recovery / 20 * 100)), clr:"#4488FF", label:"RECOV" },
-    { cx:128, cy:128, pct: Math.min(100, Math.round(pillars.progress / 20 * 100)), clr:"#00E5CC", label:"PROG"  },
+    { cx:70,  cy:70,  pct: Math.min(100, Math.round(pillars.training / 30 * 100)), clr:"#9D7FFF", label:"TRAIN" },
+    { cx:210, cy:70,  pct: Math.min(100, Math.round(pillars.fuel     / 30 * 100)), clr:"#FFB800", label:"FUEL"  },
+    { cx:70,  cy:210, pct: Math.min(100, Math.round(pillars.recovery / 20 * 100)), clr:"#4488FF", label:"RECOV" },
+    { cx:210, cy:210, pct: Math.min(100, Math.round(pillars.progress / 20 * 100)), clr:"#00E5CC", label:"PROG"  },
   ];
-  const R = 22, CIRC = 2 * Math.PI * R;
+  const R = 52, CIRC = 2 * Math.PI * R;
   return (
-    <svg viewBox="0 0 170 170" style={{ width:140, height:140, flexShrink:0 }}>
+    <svg viewBox="0 0 280 280" style={{ width:"100%", height:"auto", display:"block" }}>
       {rings.map(({ cx, cy, pct, clr, label }) => {
         const offset = CIRC * (1 - Math.max(0, pct) / 100);
         return (
           <g key={label}>
-            <circle cx={cx} cy={cy} r={R} fill="none" stroke="#18182A" strokeWidth={6} />
-            <circle cx={cx} cy={cy} r={R} fill="none" stroke={clr} strokeWidth={6}
+            <circle cx={cx} cy={cy} r={R} fill="none" stroke="#18182A" strokeWidth={10} />
+            <circle cx={cx} cy={cy} r={R} fill="none" stroke={clr} strokeWidth={10}
               strokeDasharray={CIRC} strokeDashoffset={offset}
               strokeLinecap="round" transform={`rotate(-90,${cx},${cy})`} />
-            <text x={cx} y={cy + 5} textAnchor="middle"
-              fontFamily="'Bebas Neue',sans-serif" fontSize="13" fill={clr}>{pct}</text>
-            <text x={cx} y={cy + 15} textAnchor="middle"
-              fontFamily="monospace" fontSize="6.5" fill="#556" letterSpacing="0.8">{label}</text>
+            <text x={cx} y={cy + 10} textAnchor="middle"
+              fontFamily="'Bebas Neue',sans-serif" fontSize="28" fill={clr}>{pct}</text>
+            <text x={cx} y={cy + 28} textAnchor="middle"
+              fontFamily="monospace" fontSize="11" fill="#556" letterSpacing="1">{label}</text>
           </g>
         );
       })}
-      <circle cx={85} cy={85} r={22} fill="#07070A" stroke={color} strokeWidth={1.5} />
-      <text x={85} y={83} textAnchor="middle"
-        fontFamily="'Bebas Neue',sans-serif" fontSize="22" fill={color}>{composite}</text>
-      <text x={85} y={94} textAnchor="middle"
-        fontFamily="monospace" fontSize="6" fill={color} letterSpacing="1">/100</text>
+      <circle cx={140} cy={140} r={36} fill="#07070A" stroke={color} strokeWidth={2} />
+      <text x={140} y={133} textAnchor="middle"
+        fontFamily="'Bebas Neue',sans-serif" fontSize="34" fill={color}>{composite}</text>
+      <text x={140} y={155} textAnchor="middle"
+        fontFamily="monospace" fontSize="11" fill={color} letterSpacing="2">/100</text>
     </svg>
   );
 }
@@ -2889,29 +2890,20 @@ function TodayScoreCard({ data, onAction }) {
 
   return (
     <div style={{ background:C.surface, border:`1px solid ${labelColor}80`, borderRadius:16, padding:16, marginBottom:14 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:10 }}>
-        <div style={{ flex:1, paddingTop:2 }}>
-          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>TODAY SCORE</div>
-          <div style={{ fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:2, lineHeight:1 }}>{displayLabel}</div>
-          {/* 7d avg — always visible once history exists */}
-          {trend && (
-            <div style={{ marginTop:6 }}>
-              <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayMid, letterSpacing:0.4 }}>
-                7D AVG <span style={{ color:C.grayLight }}>{trend.avg}</span>
-                <span style={{ color:trendColor, marginLeft:6 }}>{trendIcon} {trend.delta > 0 ? "+" : ""}{trend.delta}</span>
-              </div>
-              {!hasAnyData && trend.ydScore !== null && (
-                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2, letterSpacing:0.3 }}>
-                  YESTERDAY <span style={{ color:C.grayLight }}>{trend.ydScore}</span>
-                  <span style={{ color:C.gray }}> · TODAY SO FAR {score.composite}</span>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        <QuadrantRings pillars={score.pillars} composite={score.composite} color={labelColor} />
+      {/* Compact header row */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5 }}>TODAY SCORE</div>
+        {trend && (
+          <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayMid, letterSpacing:0.4 }}>
+            7D AVG <span style={{ color:C.grayLight }}>{trend.avg}</span>
+            <span style={{ color:trendColor, marginLeft:6 }}>{trendIcon} {trend.delta > 0 ? "+" : ""}{trend.delta}</span>
+          </div>
+        )}
       </div>
-      <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.55, marginBottom: oneAction.action ? 12 : 0 }}>{summary}</div>
+      {/* Rings — full-width hero */}
+      <QuadrantRings pillars={score.pillars} composite={score.composite} color={labelColor} />
+      {/* Status label centered below rings */}
+      <div style={{ textAlign:"center", fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:3, marginTop:10, marginBottom: oneAction.action ? 12 : 4 }}>{displayLabel}</div>
       {oneAction.action && onAction && (
         <button onClick={() => onAction(oneAction.action)} style={{ width:"100%", padding:"11px", background:`${labelColor}18`, border:`1px solid ${labelColor}`, borderRadius:10, color:labelColor, fontFamily:F.mono, fontSize:11, fontWeight:700, letterSpacing:1, cursor:"pointer" }}>
           → {oneAction.label.toUpperCase()}
@@ -7496,6 +7488,7 @@ function FuelTab({ data, updateData, onLogMeal }) {
   const [microExpanded, setMicroExpanded] = useState(false);
   const [editingItem, setEditingItem] = useState(null);       // {date, idx, item}
   const [expandedDay, setExpandedDay] = useState(null);       // date string in history
+  const [chartMacro, setChartMacro]   = useState("kcal");     // "kcal"|"protein"|"carbs"|"fat"
 
   const t = getToday();
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
@@ -7699,9 +7692,13 @@ function FuelTab({ data, updateData, onLogMeal }) {
     const chartData = days.slice().reverse().map(function(date) {
       const d = data.meals[date];
       const label = date.slice(5); // "MM-DD"
-      return { date, label, kcal: d ? Math.round(d.calories) : 0 };
+      return { date, label, kcal: d ? Math.round(d.calories) : 0, protein: d ? Math.round(d.protein) : 0, carbs: d ? Math.round(d.carbs) : 0, fat: d ? Math.round(d.fat) : 0 };
     });
-    const maxKcal = Math.max(calTarget * 1.2, ...chartData.map(function(d) { return d.kcal; }));
+    const macroTargets = { kcal: calTarget, protein: protTarget, carbs: carbTarget, fat: fatTarget };
+    const macroColors  = { kcal: C.lime, protein: "#9D7FFF", carbs: C.amber, fat: C.orange };
+    const macroLabels  = { kcal: "KCAL", protein: "PROTEIN g", carbs: "CARBS g", fat: "FAT g" };
+    const activeTarget = macroTargets[chartMacro];
+    const activeColor  = macroColors[chartMacro];
 
     return (
       <div>
@@ -7719,23 +7716,37 @@ function FuelTab({ data, updateData, onLogMeal }) {
         </div>
 
         {/* Bar chart */}
-        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"16px 10px 10px", marginBottom:12 }}>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:12, paddingLeft:6 }}>
-            KCAL / DAY
-            <span style={{ color:C.border, marginLeft:8, fontSize:10 }}>— — target {calTarget}</span>
+        <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"14px 10px 10px", marginBottom:12 }}>
+          {/* Macro toggle pills */}
+          <div style={{ display:"flex", gap:5, marginBottom:12, paddingLeft:4, paddingRight:4 }}>
+            {["kcal","protein","carbs","fat"].map(function(m) {
+              const active = chartMacro === m;
+              const clr = macroColors[m];
+              return (
+                <button key={m} onClick={() => setChartMacro(m)}
+                  style={{ flex:1, padding:"7px 0", background:active?clr+"22":"none", border:"1px solid "+(active?clr:C.border), borderRadius:7, fontFamily:F.mono, fontSize:9, color:active?clr:C.gray, cursor:"pointer", letterSpacing:0.5 }}>
+                  {macroLabels[m]}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:0.8, marginBottom:8, paddingLeft:4 }}>
+            <span style={{ color:activeColor }}>{macroLabels[chartMacro]}</span>
+            <span style={{ color:C.border, marginLeft:8 }}>— — target {activeTarget}{chartMacro==="kcal"?" kcal":" g"}</span>
           </div>
           <ResponsiveContainer width="100%" height={140}>
             <BarChart data={chartData} barCategoryGap="20%">
               <XAxis dataKey="label" tick={{ fontFamily:"monospace", fontSize:9, fill:C.gray }} axisLine={false} tickLine={false} />
               <Tooltip
                 contentStyle={{ background:C.bg, border:"1px solid "+C.border, borderRadius:8, fontFamily:"monospace", fontSize:11 }}
-                formatter={function(val) { return [val+" kcal", "Calories"]; }}
+                formatter={function(val) { return [val+(chartMacro==="kcal"?" kcal":" g"), macroLabels[chartMacro]]; }}
                 labelStyle={{ color:C.gray }}
               />
-              <ReferenceLine y={calTarget} stroke={C.lime} strokeDasharray="4 4" strokeWidth={1} />
-              <Bar dataKey="kcal" fill={C.teal} radius={[3,3,0,0]}
+              <ReferenceLine y={activeTarget} stroke={activeColor} strokeDasharray="4 4" strokeWidth={1} />
+              <Bar dataKey={chartMacro} fill={activeColor} radius={[3,3,0,0]}
                 cell={chartData.map(function(d, i) {
-                  return React.createElement("cell", { key: i, fill: d.kcal >= calTarget ? C.lime : d.kcal >= calTarget*0.8 ? C.teal : C.border });
+                  const val = d[chartMacro];
+                  return React.createElement("cell", { key: i, fill: val >= activeTarget ? activeColor : val >= activeTarget*0.8 ? activeColor+"99" : C.border });
                 })}
               />
             </BarChart>
