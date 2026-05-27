@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
 import { Dumbbell, Utensils, TrendingUp, User, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings } from "lucide-react";
 
@@ -885,6 +885,7 @@ const ACTIVE_WORKOUT_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
 // ── Live structured session (TodayTab) persistence ─────────────────
 const LIVE_SESSION_KEY = "ft:liveSession";
 const LIVE_SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+const CUSTOM_ROUTINES_KEY = "ft:customRoutines";
 
 function fmtRelativeTime(ts) {
   const diff = Date.now() - ts;
@@ -3533,8 +3534,242 @@ function ExercisePickerModal({ current, originalName, onPick, onClose }) {
   );
 }
 
+
+// ── Plate Calculator Sheet (V2.1 Chunk 5) ────────────────────────────────────
+function PlateCalculatorSheet({ open, onClose }) {
+  const [targetStr, setTargetStr] = React.useState("");
+  const [barWeight, setBarWeight] = React.useState(45);
+  const PLATES = [45, 35, 25, 10, 5, 2.5];
+
+  const calcPlates = (total, bar) => {
+    let rem = (total - bar) / 2;
+    const result = [];
+    for (const p of PLATES) {
+      const n = Math.floor(rem / p + 0.0001);
+      if (n > 0) { result.push({ plate:p, count:n }); rem -= n * p; }
+    }
+    return { breakdown:result, remainder: Math.round(rem * 100) / 100 };
+  };
+
+  const target = parseFloat(targetStr);
+  const valid = !isNaN(target) && target > barWeight;
+  const { breakdown, remainder } = valid ? calcPlates(target, barWeight) : { breakdown:[], remainder:0 };
+  const totalPerSide = valid ? (target - barWeight) / 2 : 0;
+
+  const PLATE_COLORS = { 45:"#8B0000", 35:"#00008B", 25:"#DAA520", 10:"#228B22", 5:"#666", 2.5:"#444" };
+
+  if (!open) return null;
+  return (
+    <>
+      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:300 }} />
+      <div style={{
+        position:"fixed", left:"50%", transform:"translateX(-50%)",
+        bottom:0, width:"100%", maxWidth:480,
+        background:"#0E0E18", borderRadius:"20px 20px 0 0",
+        padding:"20px 20px 48px", zIndex:301,
+      }}>
+        <div style={{ width:36, height:4, borderRadius:2, background:"#2A2A3A", margin:"0 auto 20px" }} />
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:16 }}>🏋️ PLATE CALCULATOR</div>
+
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:6 }}>TARGET WEIGHT (lbs)</div>
+          <input
+            type="number" value={targetStr}
+            onChange={e => setTargetStr(e.target.value)}
+            placeholder="e.g. 225"
+            style={{
+              width:"100%", padding:"12px 14px", background:C.surface,
+              border:`1px solid ${C.border}`, borderRadius:10,
+              fontFamily:F.mono, fontSize:20, color:C.white, outline:"none",
+              boxSizing:"border-box",
+            }}
+          />
+        </div>
+
+        <div style={{ display:"flex", gap:8, marginBottom:18 }}>
+          {[45, 35].map(b => (
+            <button key={b} onClick={() => setBarWeight(b)}
+              style={{
+                flex:1, padding:"8px 0",
+                background: barWeight === b ? `${C.lime}18` : C.surface,
+                border:`1px solid ${barWeight === b ? C.lime : C.border}`,
+                borderRadius:8, fontFamily:F.mono, fontSize:11,
+                color: barWeight === b ? C.lime : C.gray, cursor:"pointer",
+              }}>
+              {b} lb bar
+            </button>
+          ))}
+        </div>
+
+        {valid ? (
+          <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:10 }}>
+              PER SIDE — {totalPerSide} lbs
+            </div>
+            {breakdown.length === 0 && (
+              <div style={{ fontFamily:F.mono, fontSize:12, color:C.gray }}>No plates needed</div>
+            )}
+            {breakdown.map(({plate, count}) => (
+              <div key={plate} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:`1px solid ${C.border}` }}>
+                <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                  {Array.from({length:Math.min(count, 5)}).map((_,i) => (
+                    <div key={i} style={{
+                      width: plate >= 45 ? 24 : plate >= 25 ? 20 : plate >= 10 ? 17 : 13,
+                      height:36, borderRadius:3,
+                      background: PLATE_COLORS[plate] || "#555",
+                      border:"1px solid #ffffff18",
+                      flexShrink:0,
+                    }} />
+                  ))}
+                  {count > 5 && <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginLeft:2 }}>+{count-5}</div>}
+                </div>
+                <div style={{ fontFamily:F.mono, fontSize:15, fontWeight:600, color:C.white }}>{count}× {plate} lb</div>
+              </div>
+            ))}
+            {remainder > 0.05 && (
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.orange, marginTop:8 }}>
+                ⚠ {remainder} lb remainder — not exact with standard plates
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ textAlign:"center", fontFamily:F.mono, fontSize:11, color:C.gray, padding:24 }}>
+            Enter a weight above {barWeight} lbs to see plate breakdown
+          </div>
+        )}
+
+        <button onClick={onClose} style={{ width:"100%", marginTop:18, padding:"11px", background:"none", border:`1px solid ${C.border}`, borderRadius:10, fontFamily:F.mono, fontSize:11, color:C.gray, cursor:"pointer" }}>
+          CLOSE
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ── Custom Routine Builder Sheet (V2.1 Chunk 5) ───────────────────────────────
+function CustomRoutineBuilderSheet({ open, onClose, onSave }) {
+  const [name, setName] = React.useState("");
+  const [exercises, setExercises] = React.useState([{ name:"", sets:"3", reps:"10-12" }]);
+  const [exQuery, setExQuery] = React.useState("");
+  const [focusIdx, setFocusIdx] = React.useState(null);
+
+  const addExercise = () => setExercises(ex => [...ex, { name:"", sets:"3", reps:"10-12" }]);
+  const removeEx = (i) => setExercises(ex => ex.filter((_,idx) => idx !== i));
+  const updateEx = (i, field, val) => setExercises(ex => ex.map((e, idx) => idx === i ? {...e, [field]:val} : e));
+
+  const suggestions = exQuery.trim().length > 1
+    ? EXERCISE_LIST.filter(e => e.name.toLowerCase().includes(exQuery.toLowerCase())).slice(0, 5)
+    : [];
+
+  const canSave = name.trim().length > 0 && exercises.some(e => e.name.trim().length > 0);
+
+  const handleSave = () => {
+    const routine = {
+      id:`r_${Date.now()}`,
+      name: name.trim(),
+      exercises: exercises.filter(e => e.name.trim()).map(e => ({
+        name:e.name.trim(), sets:e.sets, reps:e.reps,
+        current:"", target:"", pr:null, note:"",
+      })),
+    };
+    onSave(routine);
+    setName(""); setExercises([{ name:"", sets:"3", reps:"10-12" }]);
+    onClose();
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:302 }} />
+      <div style={{
+        position:"fixed", left:"50%", transform:"translateX(-50%)",
+        bottom:0, width:"100%", maxWidth:480,
+        background:"#0E0E18", borderRadius:"20px 20px 0 0",
+        padding:"20px 16px 48px", zIndex:303,
+        maxHeight:"90vh", overflowY:"auto",
+      }}>
+        <div style={{ width:36, height:4, borderRadius:2, background:"#2A2A3A", margin:"0 auto 18px" }} />
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:14 }}>NEW ROUTINE</div>
+
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="Routine name (e.g. Push Day)"
+          style={{
+            width:"100%", padding:"12px 14px", background:C.surface,
+            border:`1px solid ${C.border}`, borderRadius:10,
+            fontFamily:F.mono, fontSize:14, color:C.white, outline:"none",
+            boxSizing:"border-box", marginBottom:16,
+          }}
+        />
+
+        {exercises.map((ex, i) => (
+          <div key={i} style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:"12px", marginBottom:8 }}>
+            <div style={{ position:"relative" }}>
+              <input
+                value={ex.name}
+                onChange={e => { updateEx(i, "name", e.target.value); setExQuery(e.target.value); setFocusIdx(i); }}
+                onBlur={() => setTimeout(() => { setExQuery(""); setFocusIdx(null); }, 160)}
+                onFocus={() => setFocusIdx(i)}
+                placeholder={`Exercise ${i + 1}`}
+                style={{
+                  width:"100%", padding:"8px 10px", background:"#1A1A22",
+                  border:`1px solid ${C.border}`, borderRadius:7,
+                  fontFamily:F.mono, fontSize:13, color:C.white, outline:"none",
+                  boxSizing:"border-box",
+                }}
+              />
+              {focusIdx === i && suggestions.length > 0 && (
+                <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#1A1A2E", border:`1px solid ${C.border}`, borderRadius:8, zIndex:10, overflow:"hidden" }}>
+                  {suggestions.map((s,j) => (
+                    <div key={j}
+                      onMouseDown={() => { updateEx(i, "name", s.name); setExQuery(""); setFocusIdx(null); }}
+                      style={{ padding:"9px 12px", fontFamily:F.mono, fontSize:12, color:C.white, cursor:"pointer", borderBottom:`1px solid ${C.border}` }}>
+                      {s.name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ display:"flex", gap:8, marginTop:8, alignItems:"flex-end" }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginBottom:3 }}>SETS</div>
+                <input value={ex.sets} onChange={e => updateEx(i,"sets",e.target.value)}
+                  style={{ width:"100%", padding:"7px 8px", background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:6, fontFamily:F.mono, fontSize:13, color:C.white, outline:"none", boxSizing:"border-box" }} />
+              </div>
+              <div style={{ flex:2 }}>
+                <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, marginBottom:3 }}>REPS</div>
+                <input value={ex.reps} onChange={e => updateEx(i,"reps",e.target.value)}
+                  style={{ width:"100%", padding:"7px 8px", background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:6, fontFamily:F.mono, fontSize:13, color:C.white, outline:"none", boxSizing:"border-box" }} />
+              </div>
+              {exercises.length > 1 && (
+                <button onClick={() => removeEx(i)}
+                  style={{ background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"7px 10px", fontFamily:F.mono, fontSize:11, color:C.orange, cursor:"pointer" }}>✕</button>
+              )}
+            </div>
+          </div>
+        ))}
+
+        <button onClick={addExercise}
+          style={{ width:"100%", padding:10, background:"none", border:`1px dashed ${C.border}`, borderRadius:10, fontFamily:F.mono, fontSize:11, color:C.gray, cursor:"pointer", marginBottom:16 }}>
+          + ADD EXERCISE
+        </button>
+
+        <button onClick={handleSave} disabled={!canSave}
+          style={{
+            width:"100%", padding:"12px", borderRadius:10, fontFamily:F.mono, fontSize:12, letterSpacing:1,
+            background: canSave ? C.lime : "#1A1A22", color: canSave ? C.dark : C.gray,
+            border:"none", cursor: canSave ? "pointer" : "default", fontWeight:700,
+          }}>
+          SAVE ROUTINE
+        </button>
+      </div>
+    </>
+  );
+}
+
 // ── WorkoutPickerSheet — bottom-drawer workout selector (V2.1 Chunk 4) ──
-function WorkoutPickerSheet({ open, onClose, onPick, todayScheduled }) {
+function WorkoutPickerSheet({ open, onClose, onPick, onPickCustom, onBuildRoutine, todayScheduled, customRoutines }) {
   const allWorkouts = Object.values(WORKOUTS);
   if (!open) return null;
   return (
@@ -3592,6 +3827,37 @@ function WorkoutPickerSheet({ open, onClose, onPick, todayScheduled }) {
           </div>
           <Plus size={14} color={C.gray} />
         </button>
+
+        {/* Custom saved routines */}
+        {customRoutines && customRoutines.length > 0 && (<>
+          <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginTop:18, marginBottom:8 }}>CUSTOM</div>
+          {customRoutines.map(r => (
+            <button key={r.id} onClick={() => { onPickCustom && onPickCustom(r); onClose(); }}
+              style={{
+                display:"flex", alignItems:"center", justifyContent:"space-between",
+                width:"100%", padding:"12px 14px", marginBottom:6,
+                background:C.surface, border:`1px solid ${C.border}`,
+                borderRadius:12, cursor:"pointer", textAlign:"left",
+              }}>
+              <div>
+                <div style={{ fontFamily:F.display, fontSize:17, color:C.purple, letterSpacing:1 }}>{r.name.toUpperCase()}</div>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>{r.exercises.length} exercises · custom</div>
+              </div>
+              <ChevronRight size={14} color={C.gray} />
+            </button>
+          ))}
+        </>)}
+
+        <button onClick={() => { onBuildRoutine && onBuildRoutine(); onClose(); }}
+          style={{
+            display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+            width:"100%", padding:"11px 14px", marginTop:14,
+            background:"none", border:`1px dashed ${C.border}`,
+            borderRadius:12, cursor:"pointer",
+          }}>
+          <Plus size={12} color={C.gray} />
+          <span style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1 }}>BUILD NEW ROUTINE</span>
+        </button>
       </div>
     </>
   );
@@ -3612,10 +3878,27 @@ function TodayTab({ data, updateData, onLogMeal }) {
 
   const [browseDay, setBrowseDay] = useState(getDefaultBrowseDay);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [loadedRoutine, setLoadedRoutine] = useState(null); // {id,name,exercises} when custom routine loaded
+  const [customRoutines, setCustomRoutines] = useState([]);
+  const [routineBuilderOpen, setRoutineBuilderOpen] = useState(false);
+  const [plateCalcOpen, setPlateCalcOpen] = useState(false);
+
+  // Load custom routines from storage on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await window.storage.get(CUSTOM_ROUTINES_KEY);
+        if (raw && raw.value) setCustomRoutines(JSON.parse(raw.value));
+      } catch {}
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // browseDay can be a WORKOUTS key or "freestyle" — wo resolves accordingly
   const isLiveDay = browseDay === actualSplit; // kept for compat; less relevant now any day is startable
-  const wo = browseDay === "freestyle" ? FREESTYLE_WO : WORKOUTS[browseDay];
+  const wo = loadedRoutine
+    ? { ...FREESTYLE_WO, label:loadedRoutine.name.toUpperCase(), focus:`Custom · ${loadedRoutine.exercises.length} exercises`, color:C.purple, bg:"#0C0818", exercises:loadedRoutine.exercises }
+    : browseDay === "freestyle" ? FREESTYLE_WO : WORKOUTS[browseDay];
   const t = getToday();
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
   const calTarget = isActualRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
@@ -3624,6 +3907,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
   const [sessionStart, setSessionStart] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
   const [restStartTime, setRestStartTime] = useState(null); // null = not resting; ms timestamp = resting since
+  const [restTargetSecs, setRestTargetSecs] = useState(90); // configurable rest duration target
+  const [restAlertFired, setRestAlertFired] = useState(false); // prevents vibration repeating
   const [restType, setRestType] = useState("normal"); // "normal" | "superset" — drives rest thresholds
   const [sessionNote, setSessionNote] = useState("");
   const [finished, setFinished] = useState(false);
@@ -3911,6 +4196,9 @@ function TodayTab({ data, updateData, onLogMeal }) {
   // Derived rest values from real timestamp — survives backgrounding
   const restActive = restStartTime !== null;
   const restSecs = restActive ? Math.floor((now - restStartTime) / 1000) : 0;
+  const restTarget = restType === "superset" ? 60 : restTargetSecs;
+  const restRemaining = Math.max(0, restTarget - restSecs);
+  const restDone = restActive && restSecs >= restTarget;
 
   async function finishSession() {
     if (!wo) return;
@@ -3965,9 +4253,27 @@ function TodayTab({ data, updateData, onLogMeal }) {
     setResumedAt(null);
   }
 
-  const restColor = restType === "superset"
-    ? (restSecs < 45 ? C.lime : restSecs < 75 ? C.amber : C.orange)
-    : (restSecs < 90 ? C.lime : restSecs < 150 ? C.amber : C.orange);
+  const restColor = restDone ? C.lime
+    : restRemaining > 20 ? C.lime
+    : restRemaining > 8 ? C.amber
+    : C.orange;
+
+  // Save a new custom routine to IndexedDB and update state
+  const saveCustomRoutine = async (routine) => {
+    const updated = [...customRoutines, routine];
+    setCustomRoutines(updated);
+    try { await window.storage.set(CUSTOM_ROUTINES_KEY, JSON.stringify(updated)); } catch {}
+  };
+
+  // Vibrate when rest timer completes (fires once per rest period)
+  useEffect(() => {
+    if (restDone && restActive && !restAlertFired) {
+      setRestAlertFired(true);
+      try { navigator.vibrate && navigator.vibrate([150, 80, 150, 80, 150]); } catch {}
+    }
+    if (!restActive) setRestAlertFired(false); // reset for next set
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restDone, restActive]);
 
   // Pre-compute superset groups so the live render can wrap consecutive grouped exercises in a shared container
   const exerciseGroups = (() => {
@@ -4062,8 +4368,20 @@ function TodayTab({ data, updateData, onLogMeal }) {
       <WorkoutPickerSheet
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
-        onPick={(label) => { setBrowseDay(label); setExpandedEx(null); }}
+        onPick={(label) => { setBrowseDay(label); setLoadedRoutine(null); setExpandedEx(null); }}
+        onPickCustom={(r) => { setLoadedRoutine(r); setBrowseDay(r.name); setExpandedEx(null); }}
+        onBuildRoutine={() => setRoutineBuilderOpen(true)}
         todayScheduled={actualSplit}
+        customRoutines={customRoutines}
+      />
+      <CustomRoutineBuilderSheet
+        open={routineBuilderOpen}
+        onClose={() => setRoutineBuilderOpen(false)}
+        onSave={saveCustomRoutine}
+      />
+      <PlateCalculatorSheet
+        open={plateCalcOpen}
+        onClose={() => setPlateCalcOpen(false)}
       />
 
       {/* Selected workout header */}
@@ -4086,26 +4404,47 @@ function TodayTab({ data, updateData, onLogMeal }) {
                   <div style={{ fontFamily:F.mono, fontSize:9, color:C.lime }}>● LIVE</div>
                 </div>
               )}
+              <button
+                onClick={() => setPlateCalcOpen(true)}
+                style={{ marginTop:6, background:"none", border:`1px solid ${C.border}`, borderRadius:7, padding:"4px 9px", fontFamily:F.mono, fontSize:9, color:C.gray, cursor:"pointer" }}
+                title="Open plate calculator"
+              >🏋️ PLATES</button>
             </div>
           </div>
 
-          {/* Rest timer */}
-          {restActive && sessionStarted && (
-            <div style={{ display:"flex", alignItems:"center", gap:12, background:`${restColor}12`, border:`1px solid ${restColor}30`, borderRadius:10, padding:"8px 14px", marginTop:8 }}>
-              <div style={{ fontFamily:F.display, fontSize:26, color:restColor }}>{fmt(restSecs)}</div>
-              <div style={{ flex:1 }}>
-                <div style={{ fontFamily:F.mono, fontSize:9, color:restColor }}>
-                  {restType === "superset" ? "🔗 SUPERSET REST" : "REST TIMER"}
+          {/* Rest timer — countdown with progress bar + vibrate on complete (V2.1 Chunk 5) */}
+          {restActive && sessionStarted && (() => {
+            const pct = Math.min(100, (restSecs / restTarget) * 100);
+            return (
+              <div style={{ background:`${restColor}10`, border:`1px solid ${restColor}30`, borderRadius:10, padding:"10px 14px", marginTop:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+                  <div style={{ fontFamily:F.display, fontSize:28, color:restColor, minWidth:76 }}>
+                    {restDone ? "GO ✓" : fmt(restRemaining)}
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontFamily:F.mono, fontSize:9, color:restColor, marginBottom:2 }}>
+                      {restType === "superset" ? "🔗 SUPERSET · 60s" : `REST · ${restTarget}s`}
+                    </div>
+                    <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>
+                      {restDone ? "Ready to go ✓" : restRemaining > 20 ? "Recovering..." : restRemaining > 8 ? "Almost ready..." : "Go soon!"}
+                    </div>
+                  </div>
+                  {restType !== "superset" && (
+                    <button
+                      onClick={() => setRestTargetSecs(t => t === 60 ? 90 : t === 90 ? 120 : t === 120 ? 180 : 60)}
+                      style={{ background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"3px 8px", fontFamily:F.mono, fontSize:9, color:C.gray, cursor:"pointer" }}
+                      title="Tap to cycle rest target"
+                    >{restTargetSecs}s</button>
+                  )}
+                  <button onClick={() => { setRestStartTime(null); setRestAlertFired(false); }}
+                    style={{ background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"4px 10px", fontFamily:F.mono, fontSize:9, color:C.gray, cursor:"pointer" }}>SKIP</button>
                 </div>
-                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray }}>
-                  {restType === "superset"
-                    ? (restSecs < 45 ? "→ Move to next exercise..." : restSecs < 75 ? "Almost ready..." : "Ready to go ✓")
-                    : (restSecs < 90 ? "Recovering..." : restSecs < 150 ? "Almost ready..." : "Ready to go ✓")}
+                <div style={{ height:3, background:"#1A1A24", borderRadius:2, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${pct}%`, background:restColor, borderRadius:2, transition:"width 0.9s linear" }} />
                 </div>
               </div>
-              <button onClick={() => setRestStartTime(null)} style={{ background:"none", border:`1px solid ${C.border}`, borderRadius:6, padding:"4px 10px", fontFamily:F.mono, fontSize:9, color:C.gray, cursor:"pointer" }}>SKIP</button>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Session progress bar */}
           {sessionStarted && (
