@@ -975,6 +975,14 @@ const WORKOUTS = {
   },
 };
 
+
+// ── Freestyle workout placeholder (Chunk 4 — no prescribed exercises) ────────
+const FREESTYLE_WO = {
+  label:"FREESTYLE", focus:"Open session — add exercises as you go", color:"#AAAAAA", bg:"#0A0A0A",
+  duration:null, note:"No plan today — just train. Add any exercises you want.",
+  exercises:[],
+};
+
 // ── 4-Phase Roadmap ───────────────────────────────────────────────
 const PHASES = [
   {
@@ -3525,6 +3533,70 @@ function ExercisePickerModal({ current, originalName, onPick, onClose }) {
   );
 }
 
+// ── WorkoutPickerSheet — bottom-drawer workout selector (V2.1 Chunk 4) ──
+function WorkoutPickerSheet({ open, onClose, onPick, todayScheduled }) {
+  const allWorkouts = Object.values(WORKOUTS);
+  if (!open) return null;
+  return (
+    <>
+      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:200 }} />
+      <div style={{
+        position:"fixed", left:"50%", transform:"translateX(-50%)",
+        bottom:0, width:"100%", maxWidth:480,
+        background:"#0E0E18", borderRadius:"20px 20px 0 0",
+        padding:"16px 16px 40px", zIndex:201,
+        maxHeight:"82vh", overflowY:"auto",
+      }}>
+        <div style={{ width:36, height:4, borderRadius:2, background:"#2A2A3A", margin:"0 auto 18px" }} />
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:16 }}>SELECT WORKOUT</div>
+
+        {/* Prescribed — today's highlighted */}
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:8 }}>PRESCRIBED</div>
+        {allWorkouts.map(wo => {
+          const isToday = todayScheduled === wo.label;
+          return (
+            <button key={wo.label} onClick={() => { onPick(wo.label); onClose(); }}
+              style={{
+                display:"flex", alignItems:"center", justifyContent:"space-between",
+                width:"100%", padding:"12px 14px", marginBottom:6,
+                background: isToday ? `${wo.color}18` : C.surface,
+                border: `1px solid ${isToday ? wo.color : C.border}`,
+                borderRadius:12, cursor:"pointer", textAlign:"left",
+              }}>
+              <div>
+                <div style={{ fontFamily:F.display, fontSize:17, color:wo.color, letterSpacing:1 }}>{wo.label}</div>
+                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>{wo.focus} · {wo.duration}</div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                {isToday && (
+                  <div style={{ background:wo.color, color:C.dark, fontFamily:F.mono, fontSize:8, fontWeight:700, letterSpacing:1, padding:"2px 7px", borderRadius:6 }}>TODAY</div>
+                )}
+                <ChevronRight size={14} color={C.gray} />
+              </div>
+            </button>
+          );
+        })}
+
+        {/* Freestyle */}
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginTop:14, marginBottom:8 }}>FREESTYLE</div>
+        <button onClick={() => { onPick("freestyle"); onClose(); }}
+          style={{
+            display:"flex", alignItems:"center", justifyContent:"space-between",
+            width:"100%", padding:"12px 14px",
+            background:C.surface, border:`1px solid ${C.border}`,
+            borderRadius:12, cursor:"pointer", textAlign:"left",
+          }}>
+          <div>
+            <div style={{ fontFamily:F.display, fontSize:17, color:C.lime, letterSpacing:1 }}>FREESTYLE</div>
+            <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2 }}>Open session · add any exercise as you go</div>
+          </div>
+          <Plus size={14} color={C.gray} />
+        </button>
+      </div>
+    </>
+  );
+}
+
 function TodayTab({ data, updateData, onLogMeal }) {
   const actualDayName = DAYS[new Date().getDay()];
   const actualSplit = SPLIT_MAP[actualDayName];
@@ -3539,9 +3611,11 @@ function TodayTab({ data, updateData, onLogMeal }) {
   };
 
   const [browseDay, setBrowseDay] = useState(getDefaultBrowseDay);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const isLiveDay = browseDay === actualSplit; // true when viewing today's actual training day
-  const wo = WORKOUTS[browseDay];
+  // browseDay can be a WORKOUTS key or "freestyle" — wo resolves accordingly
+  const isLiveDay = browseDay === actualSplit; // kept for compat; less relevant now any day is startable
+  const wo = browseDay === "freestyle" ? FREESTYLE_WO : WORKOUTS[browseDay];
   const t = getToday();
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
   const calTarget = isActualRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
@@ -3676,7 +3750,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
     const id = setInterval(() => {
       const payload = {
         ts: Date.now(),
-        sessionStart, sessionStarted, sessionDay: actualSplit,
+        sessionStart, sessionStarted, sessionDay: browseDay,
         liveSets, sessionNote, restStartTime, restType, expandedEx,
       };
       window.storage.set(LIVE_SESSION_KEY, JSON.stringify(payload)).then(() => {
@@ -3958,41 +4032,39 @@ function TodayTab({ data, updateData, onLogMeal }) {
   return (
     <div style={{ paddingBottom:20 }}>
 
-      {/* Day selector tabs — always visible */}
-      <div style={{ background:C.bg, borderBottom:`1px solid ${C.border}`, padding:"10px 16px 0" }}>
-        <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:8, letterSpacing:1 }}>
-          {isActualRest ? "REST DAY · BROWSE UPCOMING SESSIONS" : "SELECT WORKOUT"}
-        </div>
-        <div style={{ display:"flex", gap:6 }}>
-          {dayTabs.map(({ label, split: tabSplit }) => {
-            const isActive = browseDay === tabSplit;
-            const isToday = actualSplit === tabSplit;
-            const tabWo = WORKOUTS[tabSplit];
-            return (
-              <button
-                key={label}
-                onClick={() => { setBrowseDay(tabSplit); setExpandedEx(null); }}
-                style={{
-                  flex:1, padding:"8px 4px 10px",
-                  background: isActive ? `${tabWo.color}18` : "transparent",
-                  border: `1px solid ${isActive ? tabWo.color : C.border}`,
-                  borderBottom: `2px solid ${isActive ? tabWo.color : "transparent"}`,
-                  borderRadius:"8px 8px 0 0",
-                  fontFamily:F.mono, fontSize:9, cursor:"pointer",
-                  color: isActive ? tabWo.color : C.gray,
-                  position:"relative",
-                }}
-              >
-                <div style={{ fontWeight:700 }}>{label}</div>
-                <div style={{ fontSize:7, opacity:.7, marginTop:1 }}>{tabSplit.split(" ")[1]}</div>
-                {isToday && (
-                  <div style={{ position:"absolute", top:4, right:5, width:5, height:5, borderRadius:"50%", background:tabWo.color }} />
-                )}
-              </button>
-            );
-          })}
+      {/* V2.1 — Workout selector header (replaces locked day tabs) */}
+      <div style={{ background:C.bg, borderBottom:`1px solid ${C.border}`, padding:"12px 16px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:3 }}>
+              {actualSplit ? `SCHEDULED: ${actualSplit}` : "REST DAY — PICK ANY WORKOUT"}
+            </div>
+            <div style={{ fontFamily:F.display, fontSize:20, color: wo ? wo.color : C.gray, letterSpacing:1 }}>
+              {wo ? wo.label : "NO WORKOUT SELECTED"}
+            </div>
+            {wo && <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayMid, marginTop:1 }}>{wo.focus}</div>}
+          </div>
+          <button
+            onClick={() => setPickerOpen(true)}
+            style={{
+              padding:"10px 16px", background:C.surface,
+              border:`1px solid ${wo ? wo.color : C.border}`,
+              borderRadius:10, fontFamily:F.mono, fontSize:10,
+              color: wo ? wo.color : C.gray, cursor:"pointer",
+              display:"flex", alignItems:"center", gap:6,
+            }}
+          >
+            <ChevronRight size={12} />
+            {sessionStarted ? "CHANGE" : "PICK"}
+          </button>
         </div>
       </div>
+      <WorkoutPickerSheet
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onPick={(label) => { setBrowseDay(label); setExpandedEx(null); }}
+        todayScheduled={actualSplit}
+      />
 
       {/* Selected workout header */}
       {wo && (
@@ -4000,7 +4072,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
             <div>
               <div style={{ fontFamily:F.mono, fontSize:9, color:wo.color, textTransform:"uppercase", letterSpacing:1.5, marginBottom:3 }}>
-                {isLiveDay && !isActualRest ? getTodayLabel() : `${Object.entries(SPLIT_MAP).find(([k,v])=>v===browseDay)?.[0]||"UPCOMING"} · PREVIEW MODE`}
+                {actualSplit === browseDay ? getTodayLabel() : browseDay === "freestyle" ? "FREESTYLE SESSION" : `${browseDay} · SELECTED`}
               </div>
               <div style={{ fontFamily:F.display, fontSize:28, color:wo.color, lineHeight:1, letterSpacing:1 }}>{browseDay}</div>
               <div style={{ fontFamily:F.display, fontSize:17, color:C.white }}>{wo.focus}</div>
@@ -4008,7 +4080,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
             <div style={{ textAlign:"right" }}>
               <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray }}>est.</div>
               <div style={{ fontFamily:F.display, fontSize:20, color:wo.color }}>{wo.duration}</div>
-              {sessionStarted && isLiveDay && !isActualRest && (
+              {sessionStarted && (
                 <div style={{ marginTop:4 }}>
                   <div style={{ fontFamily:F.display, fontSize:22, color:C.white }}>{fmt(sessionSecs)}</div>
                   <div style={{ fontFamily:F.mono, fontSize:9, color:C.lime }}>● LIVE</div>
@@ -4018,7 +4090,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
           </div>
 
           {/* Rest timer */}
-          {restActive && sessionStarted && isLiveDay && !isActualRest && (
+          {restActive && sessionStarted && (
             <div style={{ display:"flex", alignItems:"center", gap:12, background:`${restColor}12`, border:`1px solid ${restColor}30`, borderRadius:10, padding:"8px 14px", marginTop:8 }}>
               <div style={{ fontFamily:F.display, fontSize:26, color:restColor }}>{fmt(restSecs)}</div>
               <div style={{ flex:1 }}>
@@ -4036,7 +4108,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
           )}
 
           {/* Session progress bar */}
-          {sessionStarted && isLiveDay && !isActualRest && (
+          {sessionStarted && (
             <div style={{ marginTop:10 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", fontFamily:F.mono, fontSize:9, color:C.gray, marginBottom:4 }}>
                 <span>{totalDone} sets ✓</span>
@@ -4072,13 +4144,8 @@ function TodayTab({ data, updateData, onLogMeal }) {
 
       <div style={{ padding:"14px 16px 0" }}>
 
-        {/* ── PREVIEW MODE ────────────────────────────────────────── */}
-        {(!isLiveDay || isActualRest) && wo && (
-          <WorkoutPreview wo={wo} workoutHistory={data.workouts} isToday={false} />
-        )}
-
-        {/* ── LIVE SESSION MODE ────────────────────────────────────── */}
-        {isLiveDay && !isActualRest && (
+        {/* ── LIVE SESSION MODE (V2.1: any workout startable any day) ── */}
+        {!!wo && (
           <div>
             {/* Resume banner if session was restored from storage */}
             {resumedAt && (
@@ -4354,7 +4421,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
                 </div>
               ))}
             </div>
-            {isLiveDay && !isActualRest && wo && (
+            {wo && (
               <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:8 }}>
                 {[
                   { time:"Pre-workout", tip:"Banana + shake — 40g carbs + 20g protein, 45 min out" },
