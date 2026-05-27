@@ -329,6 +329,115 @@ async function generateFullBackup() {
   };
 }
 
+
+// ── Git-based data backup (V2.0) ─────────────────────────────────
+// Thomas's idea: instead of cloud (Drive/Dropbox), push backups to a separate
+// PRIVATE GitHub repo via the Contents API. He auto-pulls that repo to his
+// home SSD (same Task Scheduler pattern as the source). Full git history of
+// every backup, no extra cloud account, free, encrypted in transit.
+//
+// Setup (one-time, user does):
+//   1) Create private repo (e.g. gentletom/dialled-in-data)
+//   2) Generate fine-grained PAT scoped to that repo, Contents: Read & Write
+//   3) Paste repo + PAT into the in-app "CLOUD BACKUP" card
+
+const GIT_BACKUP_REPO_KEY  = "ft:gitBackupRepo";   // "owner/name"
+const GIT_BACKUP_TOKEN_KEY = "ft:gitBackupToken";  // PAT
+const GIT_BACKUP_LAST_KEY  = "ft:gitBackupLast";   // ISO timestamp of last successful push
+const GIT_BACKUP_AUTO_KEY  = "ft:gitBackupAuto";   // "1" if auto-backup enabled
+
+function getGitBackupConfig() {
+  try {
+    return {
+      repo: localStorage.getItem(GIT_BACKUP_REPO_KEY) || "",
+      token: localStorage.getItem(GIT_BACKUP_TOKEN_KEY) || "",
+      lastAt: localStorage.getItem(GIT_BACKUP_LAST_KEY) || null,
+      auto: localStorage.getItem(GIT_BACKUP_AUTO_KEY) === "1",
+    };
+  } catch {
+    return { repo: "", token: "", lastAt: null, auto: false };
+  }
+}
+
+function setGitBackupConfig({ repo, token, auto }) {
+  try {
+    if (repo != null) localStorage.setItem(GIT_BACKUP_REPO_KEY, (repo || "").trim());
+    if (token != null) {
+      if (token) localStorage.setItem(GIT_BACKUP_TOKEN_KEY, token.trim());
+      else localStorage.removeItem(GIT_BACKUP_TOKEN_KEY);
+    }
+    if (auto != null) localStorage.setItem(GIT_BACKUP_AUTO_KEY, auto ? "1" : "0");
+  } catch {}
+}
+
+// Base64-encode a UTF-8 string (browser btoa needs latin-1; we encode UTF-8 first)
+function b64utf8(str) {
+  try { return btoa(unescape(encodeURIComponent(str))); }
+  catch { return btoa(str); }
+}
+
+async function pushBackupToGit() {
+  const { repo, token } = getGitBackupConfig();
+  if (!repo || !token) throw new Error("Cloud Backup not configured — paste repo + token in COACH first");
+  if (!/^[^/]+\/[^/]+$/.test(repo)) throw new Error(`Repo must be "owner/name", got "${repo}"`);
+
+  const backup = await generateFullBackup();
+  const json = JSON.stringify(backup, null, 2);
+  const content = b64utf8(json);
+
+  const apiBase = `https://api.github.com/repos/${repo}/contents`;
+  const headers = {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "Content-Type": "application/json",
+  };
+
+  // Always push to current.json (overwritten). Git history maintains every version.
+  const path = "current.json";
+  const url = `${apiBase}/${path}`;
+
+  // GET to retrieve the file's current sha (required to update existing file)
+  let sha = null;
+  try {
+    const get = await fetch(url, { headers });
+    if (get.ok) {
+      const j = await get.json();
+      if (j && j.sha) sha = j.sha;
+    } else if (get.status !== 404) {
+      // 401 = bad token; 403 = scope missing; surface explicitly
+      const errText = await get.text().catch(() => "");
+      throw new Error(`GET ${get.status}: ${(errText || "").slice(0, 100)}`);
+    }
+  } catch (e) {
+    if ((e.message || "").startsWith("GET ")) throw e;
+    // Network issues — let the PUT report
+  }
+
+  const body = {
+    message: `Backup ${new Date().toISOString()} — ${backup.workouts?.length || 0} workouts, ${Object.keys(backup.meals || {}).length} meal days`,
+    content,
+    ...(sha ? { sha } : {}),
+  };
+
+  const put = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
+  if (!put.ok) {
+    const errText = await put.text().catch(() => "");
+    throw new Error(`PUT ${put.status}: ${(errText || put.statusText || "").slice(0, 200)}`);
+  }
+  try { localStorage.setItem(GIT_BACKUP_LAST_KEY, new Date().toISOString()); } catch {}
+  return await put.json();
+}
+
+// Auto-trigger guard: returns true if backup should fire (auto enabled + >20h since last)
+function shouldAutoBackup() {
+  const cfg = getGitBackupConfig();
+  if (!cfg.auto || !cfg.repo || !cfg.token) return false;
+  if (!cfg.lastAt) return true;
+  const last = new Date(cfg.lastAt).getTime();
+  return Date.now() - last > 20 * 60 * 60 * 1000;
+}
+
 // ── Restore a full backup JSON (inverse of generateFullBackup). Used by Import + future SSD restore. ──
 async function importBackup(b) {
   if (!b || typeof b !== "object") throw new Error("not a valid backup file");
@@ -2686,6 +2795,12 @@ function TodayScoreCard({ data, onAction }) {
 
 function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
   const t = getToday();
+  // V2.0 — auto-trigger git backup once per session if enabled + >20h elapsed
+  useEffect(() => {
+    if (shouldAutoBackup()) {
+      pushBackupToGit().catch(() => {}); // silent failure; user can see status in COACH card
+    }
+  }, []);
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
   const lastWeight = [...data.weightLog].filter(w => w.weight).pop();
   const currentW = lastWeight?.weight || 175.8;
@@ -5348,6 +5463,97 @@ function ImportBackupCard() {
   );
 }
 
+// ── CloudBackupCard (COACH tab) — git-based daily backup setup + manual trigger ──
+function CloudBackupCard() {
+  const [cfg, setCfg] = useState(() => getGitBackupConfig());
+  const [repoInput, setRepoInput] = useState(cfg.repo);
+  const [tokenInput, setTokenInput] = useState("");
+  const [auto, setAuto] = useState(cfg.auto);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  function refresh() { setCfg(getGitBackupConfig()); }
+
+  function saveConfig() {
+    setGitBackupConfig({
+      repo: repoInput,
+      token: tokenInput || (cfg.token ? null : ""), // null = keep existing
+      auto,
+    });
+    setTokenInput("");
+    setSaved(true);
+    refresh();
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function runBackup() {
+    setBusy(true); setStatus("Pushing to git…");
+    try {
+      const result = await pushBackupToGit();
+      setStatus(`✓ Pushed — commit ${(result?.commit?.sha || "").slice(0,7)}`);
+      refresh();
+    } catch (e) {
+      setStatus(`✗ ${(e && e.message) || "failed"}`);
+    }
+    setBusy(false);
+    setTimeout(() => setStatus(""), 8000);
+  }
+
+  const hasToken = !!cfg.token;
+  const maskedToken = hasToken ? `${cfg.token.slice(0,7)}…${cfg.token.slice(-4)}` : "";
+  const lastAtStr = cfg.lastAt ? (() => {
+    const d = new Date(cfg.lastAt);
+    const diff = Date.now() - d.getTime();
+    const hrs = Math.floor(diff / 3600000);
+    if (hrs < 1) return "less than an hour ago";
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs/24)}d ago`;
+  })() : "never";
+  const ready = !!cfg.repo && hasToken;
+  const inputStyle = { width:"100%", boxSizing:"border-box", padding:"9px 11px", background:C.surfaceAlt, border:`1px solid ${C.border}`, borderRadius:7, color:C.white, fontFamily:F.mono, fontSize:12, marginBottom:8 };
+
+  return (
+    <div style={{ background:C.surface, border:`1px solid ${ready ? C.lime+"40" : C.amber+"40"}`, borderRadius:16, padding:16, marginBottom:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+        <div style={{ fontSize:18 }}>☁️</div>
+        <SL>Cloud Backup (git)</SL>
+      </div>
+      <div style={{ fontFamily:F.mono, fontSize:10, color: ready ? C.lime : C.amber, marginBottom:10 }}>
+        {ready ? `Last push: ${lastAtStr} → ${cfg.repo}` : "Not configured yet — paste repo + token below"}
+      </div>
+
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:3 }}>BACKUP REPO (owner/name, must be PRIVATE)</div>
+      <input type="text" value={repoInput} onChange={e => setRepoInput(e.target.value)} placeholder="gentletom/dialled-in-data" style={inputStyle} />
+
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.gray, letterSpacing:1, marginBottom:3 }}>
+        FINE-GRAINED PAT {hasToken ? `(${maskedToken} on device — paste new to replace)` : ""}
+      </div>
+      <input type="password" value={tokenInput} onChange={e => setTokenInput(e.target.value)} placeholder={hasToken ? "leave blank to keep current" : "github_pat_..."} style={inputStyle} />
+
+      <label style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, cursor:"pointer" }}>
+        <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />
+        <span style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight }}>Auto-backup daily on app open (after 20h)</span>
+      </label>
+
+      <div style={{ display:"flex", gap:8, marginBottom:8 }}>
+        <button onClick={saveConfig} style={{ flex:1, padding:"10px", background: saved ? C.lime : C.teal, border:"none", color: saved ? C.dark : C.white, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:11, letterSpacing:1, cursor:"pointer" }}>
+          {saved ? "✓ SAVED" : "SAVE CONFIG"}
+        </button>
+        <button onClick={runBackup} disabled={busy || !ready} style={{ flex:1, padding:"10px", background: ready ? (busy ? "#1A1A22" : C.lime) : "#1A1A22", border:"none", color: ready ? (busy ? C.gray : C.dark) : C.gray, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:11, letterSpacing:1, cursor: ready && !busy ? "pointer" : "default" }}>
+          {busy ? "PUSHING…" : "BACKUP NOW"}
+        </button>
+      </div>
+      {status && (
+        <div style={{ fontFamily:F.mono, fontSize:10, color: status.startsWith("✓") ? C.lime : C.orange, marginTop:4, lineHeight:1.4 }}>{status}</div>
+      )}
+      <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayLight, lineHeight:1.5, marginTop:10 }}>
+        Push your data to a private GitHub repo via the Contents API. Pairs with your home-SSD auto-pull script for off-device safety. Token stored only on this device, never in the app code.
+      </div>
+    </div>
+  );
+}
+
 // ── API Key settings card (lives in COACH tab) ──
 function ApiKeyCard() {
   const [key, setKey] = useState("");
@@ -5664,6 +5870,7 @@ function CoachTab({ data, updateData, onAction }) {
       </div>
 
       {/* Backup & Restore */}
+      <CloudBackupCard />
       <ApiKeyCard />
       <BackupCard />
       <ImportBackupCard />
