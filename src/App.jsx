@@ -2685,103 +2685,121 @@ function BackupNagBanner() {
   );
 }
 
-// ── PetalFlower viz: 4 sized petals around a center showing composite score ──
-function PetalFlower({ pillars, composite, color }) {
-  const t = pillars.training / 30;
-  const f = pillars.fuel / 30;
-  const r = pillars.recovery / 20;
-  const p = pillars.progress / 20;
-  function petal(angleDeg, ratio, fillColor) {
-    const angle = angleDeg * Math.PI / 180;
-    const dist = 30;
-    const px = 100 + dist * Math.cos(angle);
-    const py = 100 + dist * Math.sin(angle);
-    const rad = 22 + 28 * ratio;
-    return <ellipse cx={px} cy={py} rx={rad} ry={rad} fill={`${fillColor}66`} stroke={fillColor} strokeWidth="1.5" />;
-  }
+// ── QuadrantRings — Whoop-style 2x2 ring grid, composite center (V2.1) ──
+// Each pillar normalized to /100 for display. Composite center circle.
+function QuadrantRings({ pillars, composite, color }) {
+  const rings = [
+    { cx:42,  cy:42,  pct: Math.min(100, Math.round(pillars.training / 30 * 100)), clr:"#9D7FFF", label:"TRAIN" },
+    { cx:128, cy:42,  pct: Math.min(100, Math.round(pillars.fuel     / 30 * 100)), clr:"#FFB800", label:"FUEL"  },
+    { cx:42,  cy:128, pct: Math.min(100, Math.round(pillars.recovery / 20 * 100)), clr:"#4488FF", label:"RECOV" },
+    { cx:128, cy:128, pct: Math.min(100, Math.round(pillars.progress / 20 * 100)), clr:"#00E5CC", label:"PROG"  },
+  ];
+  const R = 22, CIRC = 2 * Math.PI * R;
   return (
-    <svg viewBox="0 0 200 200" style={{ width:140, height:140, flexShrink:0 }}>
-      {petal(225, t, "#9D7FFF")}{/* Training - top-left, purple */}
-      {petal(315, f, "#FFB800")}{/* Fuel - top-right, amber */}
-      {petal(135, r, "#4488FF")}{/* Recovery - bottom-left, blue */}
-      {petal(45, p, "#00E5CC")}{/* Progress - bottom-right, teal */}
-      <circle cx="100" cy="100" r="26" fill="#070709" stroke={color} strokeWidth="1.5" />
-      <text x="100" y="108" textAnchor="middle" fontFamily="'Bebas Neue',sans-serif" fontSize="26" fill={color}>{composite}</text>
+    <svg viewBox="0 0 170 170" style={{ width:140, height:140, flexShrink:0 }}>
+      {rings.map(({ cx, cy, pct, clr, label }) => {
+        const offset = CIRC * (1 - Math.max(0, pct) / 100);
+        return (
+          <g key={label}>
+            <circle cx={cx} cy={cy} r={R} fill="none" stroke="#18182A" strokeWidth={6} />
+            <circle cx={cx} cy={cy} r={R} fill="none" stroke={clr} strokeWidth={6}
+              strokeDasharray={CIRC} strokeDashoffset={offset}
+              strokeLinecap="round" transform={`rotate(-90,${cx},${cy})`} />
+            <text x={cx} y={cy + 5} textAnchor="middle"
+              fontFamily="'Bebas Neue',sans-serif" fontSize="13" fill={clr}>{pct}</text>
+            <text x={cx} y={cy + 15} textAnchor="middle"
+              fontFamily="monospace" fontSize="6.5" fill="#556" letterSpacing="0.8">{label}</text>
+          </g>
+        );
+      })}
+      <circle cx={85} cy={85} r={22} fill="#07070A" stroke={color} strokeWidth={1.5} />
+      <text x={85} y={83} textAnchor="middle"
+        fontFamily="'Bebas Neue',sans-serif" fontSize="22" fill={color}>{composite}</text>
+      <text x={85} y={94} textAnchor="middle"
+        fontFamily="monospace" fontSize="6" fill={color} letterSpacing="1">/100</text>
     </svg>
   );
 }
 
-// ── TodayScoreCard — the new HOME centerpiece ──
+// ── TodayScoreCard — HOME centerpiece (V2.1: QuadrantRings + morning framing + /100) ──
 function TodayScoreCard({ data, onAction }) {
   const score = computeTodayScore(data);
   const summary = generateDailySummary(data);
   const oneAction = todayOneAction(data);
-  const [trend, setTrend] = useState(null); // { dir: "up"|"flat"|"down", delta: +N|0|-N }
+  const [scoreHistory, setScoreHistory] = useState({});
+  const [trend, setTrend] = useState(null);
 
-  // Persist today's score + compute trend vs 7-day rolling average
+  const today = getToday();
+
+  // Detect if any meaningful data has been logged today (morning framing)
+  const todayMeals = data.meals[today];
+  const hasMeals = !!(todayMeals && todayMeals.calories > 0);
+  const todayEntry = (data.weightLog || []).find(w => w.date === today);
+  const hasSleep = !!(todayEntry && todayEntry.sleep);
+  const hasWorkout = (data.workouts || []).some(w => w.date === today);
+  const hasAnyData = hasMeals || hasSleep || hasWorkout;
+
+  // Persist today's score + compute trend vs 7d rolling avg
   useEffect(() => {
     let cancelled = false;
     async function go() {
       try {
-        const today = getToday();
-        // Load existing history
         let history = {};
         try {
           const r = await window.storage.get("ft:dailyScores");
           if (r && r.value) history = JSON.parse(r.value) || {};
         } catch {}
-        // Write today's score (overwrites — score reflects current state of the day)
         history[today] = { composite: score.composite, pillars: score.pillars, ts: Date.now() };
-        // Keep last 30 days only
         const cutoff = (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 30); return toLocalDateStr(d); })();
         for (const k of Object.keys(history)) if (k < cutoff) delete history[k];
         await window.storage.set("ft:dailyScores", JSON.stringify(history));
-        // Compute trend: today vs avg of previous up-to-7 days
+        if (!cancelled) setScoreHistory({ ...history });
         const prevDates = Object.keys(history).filter(d => d < today).sort().slice(-7);
         if (prevDates.length === 0) { if (!cancelled) setTrend(null); return; }
-        const avg = prevDates.reduce((a, d) => a + (history[d].composite || 0), 0) / prevDates.length;
+        const avg = Math.round(prevDates.reduce((a, d) => a + (history[d].composite || 0), 0) / prevDates.length);
         const delta = Math.round(score.composite - avg);
         const dir = delta > 4 ? "up" : delta < -4 ? "down" : "flat";
-        if (!cancelled) setTrend({ dir, delta, n: prevDates.length });
+        const ydDate = (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 1); return toLocalDateStr(d); })();
+        const ydScore = history[ydDate]?.composite ?? null;
+        if (!cancelled) setTrend({ dir, delta, n: prevDates.length, avg, ydScore });
       } catch {}
     }
     go();
     return () => { cancelled = true; };
-  }, [score.composite]);
+  }, [score.composite, today]);
 
-  const labelColor = score.composite >= 85 ? C.lime
-                   : score.composite >= 70 ? C.teal
-                   : score.composite >= 55 ? C.amber
-                   : C.orange;
+  // Morning framing: suppress "SLIPPING" before any data is logged
+  const rawLabelColor = score.composite >= 85 ? C.lime
+                      : score.composite >= 70 ? C.teal
+                      : score.composite >= 55 ? C.amber : C.orange;
+  const labelColor = !hasAnyData ? C.teal : rawLabelColor;
+  const displayLabel = !hasAnyData ? "TODAY · BUILDING" : score.label;
   const trendIcon = trend ? (trend.dir === "up" ? "▲" : trend.dir === "down" ? "▼" : "▬") : "";
   const trendColor = trend ? (trend.dir === "up" ? C.lime : trend.dir === "down" ? C.orange : C.grayMid) : C.gray;
-  const pillarMeta = [
-    { key:"training", label:"TRAINING", max:30, color:"#9D7FFF" },
-    { key:"fuel",     label:"FUEL",     max:30, color:"#FFB800" },
-    { key:"recovery", label:"RECOVERY", max:20, color:"#4488FF" },
-    { key:"progress", label:"PROGRESS", max:20, color:"#00E5CC" },
-  ];
+
   return (
     <div style={{ background:C.surface, border:`1px solid ${labelColor}80`, borderRadius:16, padding:16, marginBottom:14 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:10 }}>
-        <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:10 }}>
+        <div style={{ flex:1, paddingTop:2 }}>
           <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>TODAY SCORE</div>
-          <div style={{ fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:2, lineHeight:1 }}>{score.label}</div>
+          <div style={{ fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:2, lineHeight:1 }}>{displayLabel}</div>
+          {/* 7d avg — always visible once history exists */}
           {trend && (
-            <div style={{ fontFamily:F.mono, fontSize:10, color:trendColor, marginTop:4, letterSpacing:0.5 }}>
-              {trendIcon} {trend.delta > 0 ? "+" : ""}{trend.delta} vs {trend.n}d avg
+            <div style={{ marginTop:6 }}>
+              <div style={{ fontFamily:F.mono, fontSize:10, color:C.grayMid, letterSpacing:0.4 }}>
+                7D AVG <span style={{ color:C.grayLight }}>{trend.avg}</span>
+                <span style={{ color:trendColor, marginLeft:6 }}>{trendIcon} {trend.delta > 0 ? "+" : ""}{trend.delta}</span>
+              </div>
+              {!hasAnyData && trend.ydScore !== null && (
+                <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, marginTop:2, letterSpacing:0.3 }}>
+                  YESTERDAY <span style={{ color:C.grayLight }}>{trend.ydScore}</span>
+                  <span style={{ color:C.gray }}> · TODAY SO FAR {score.composite}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
-        <PetalFlower pillars={score.pillars} composite={score.composite} color={labelColor} />
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:4, marginBottom:12 }}>
-        {pillarMeta.map(p => (
-          <div key={p.key} style={{ textAlign:"center", padding:"6px 2px", background:"#0A0A0F", borderRadius:8 }}>
-            <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray, letterSpacing:0.5 }}>{p.label}</div>
-            <div style={{ fontFamily:F.display, fontSize:18, color:p.color, marginTop:2, lineHeight:1 }}>{score.pillars[p.key]}<span style={{ fontSize:9, color:C.gray, marginLeft:2 }}>/{p.max}</span></div>
-          </div>
-        ))}
+        <QuadrantRings pillars={score.pillars} composite={score.composite} color={labelColor} />
       </div>
       <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.55, marginBottom: oneAction.action ? 12 : 0 }}>{summary}</div>
       {oneAction.action && onAction && (
@@ -2792,6 +2810,101 @@ function TodayScoreCard({ data, onAction }) {
     </div>
   );
 }
+
+// ── ScoreTrendChart — 7-day sparkline, tap to expand 30-day (V2.1) ────────
+function ScoreTrendChart() {
+  const [history, setHistory] = useState({});
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const r = await window.storage.get("ft:dailyScores");
+        if (r && r.value && !cancelled) setHistory(JSON.parse(r.value) || {});
+      } catch {}
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const today = getToday();
+  const dayCount = expanded ? 30 : 7;
+  const dates = [];
+  for (let i = dayCount - 1; i >= 0; i--) {
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() - i);
+    dates.push(toLocalDateStr(d));
+  }
+
+  const points = dates.map((d, i) => ({ date: d, score: history[d]?.composite ?? null, idx: i }));
+  if (!points.some(p => p.score !== null)) return null;
+
+  const W = 300, H = 68, PL = 10, PR = 10, PT = 8, PB = 20;
+  const plotW = W - PL - PR, plotH = H - PT - PB;
+  const n = dayCount;
+  const xOf = i => PL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+  const yOf = s => PT + plotH - Math.min(Math.max(s, 0), 100) / 100 * plotH;
+  const scoreClr = s => s >= 85 ? C.lime : s >= 70 ? C.teal : s >= 55 ? C.amber : C.orange;
+
+  // Segment line, skipping null gaps
+  const segments = [];
+  let seg = [];
+  for (const p of points) {
+    const y = p.score !== null ? yOf(p.score) : null;
+    if (y !== null) seg.push({ x: xOf(p.idx), y, score: p.score, date: p.date });
+    else { if (seg.length) { segments.push([...seg]); seg = []; } }
+  }
+  if (seg.length) segments.push(seg);
+
+  const dayLabels = points.map(p => {
+    const d = new Date(p.date + "T12:00:00");
+    if (expanded) return p.idx % 6 === 0 ? `${d.getMonth()+1}/${d.getDate()}` : null;
+    return ["Su","Mo","Tu","We","Th","Fr","Sa"][d.getDay()];
+  });
+
+  return (
+    <div onClick={() => setExpanded(e => !e)}
+      style={{ background:C.surface, borderRadius:14, padding:"10px 14px 4px", marginBottom:14, cursor:"pointer" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+        <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5 }}>
+          {expanded ? "30-DAY TREND" : "7-DAY TREND"}
+        </div>
+        <div style={{ fontFamily:F.mono, fontSize:9, color:C.grayMid }}>
+          {expanded ? "▲ COLLAPSE" : "▼ EXPAND"}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:"100%", height: expanded ? 100 : 68, display:"block" }}>
+        <line x1={PL} y1={PT+plotH} x2={W-PR} y2={PT+plotH} stroke="#181828" strokeWidth={1}/>
+        <line x1={PL} y1={yOf(50)} x2={W-PR} y2={yOf(50)} stroke="#181828" strokeWidth={0.5} strokeDasharray="3,5"/>
+        {segments.map((seg, si) => seg.length >= 2 && (
+          <path key={`a${si}`}
+            d={seg.map((p,i) => `${i===0?'M':'L'}${p.x},${p.y}`).join(" ")
+              + ` L${seg[seg.length-1].x},${PT+plotH} L${seg[0].x},${PT+plotH} Z`}
+            fill={`${C.teal}15`} />
+        ))}
+        {segments.map((seg, si) => seg.length >= 2 && (
+          <polyline key={`l${si}`}
+            points={seg.map(p => `${p.x},${p.y}`).join(" ")}
+            fill="none" stroke={C.teal} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+        ))}
+        {points.map((p, i) => p.score !== null && (
+          <circle key={i} cx={xOf(i)} cy={yOf(p.score)}
+            r={p.date === today ? 4.5 : 3}
+            fill={scoreClr(p.score)}
+            stroke={p.date === today ? "#07070A" : "none"}
+            strokeWidth={p.date === today ? 2 : 0} />
+        ))}
+        {dayLabels.map((label, i) => label && (
+          <text key={i} x={xOf(i)} y={H - 4}
+            textAnchor="middle" fontFamily="monospace" fontSize="7.5"
+            fill={points[i].date === today ? C.grayLight : "#444"}>{label}</text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 
 function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
   const t = getToday();
@@ -2829,12 +2942,15 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
   return (
     <div style={{ padding:"18px 16px" }}>
 
-      {/* V2.0 — Today Score (composite daily read) */}
+      {/* V2.1 — Today Score (QuadrantRings + morning framing) */}
       <TodayScoreCard data={data} onAction={(act) => {
         if (act === "weight") onLogWeight && onLogWeight();
         else if (act === "meal") onLogMeal && onLogMeal();
         else if (act === "lifts") onAction && onAction("lifts_tab");
       }} />
+
+      {/* V2.1 — 7-day score sparkline (tap to expand 30-day) */}
+      <ScoreTrendChart />
 
       {/* V2.0 — Adaptive coach nudges (rule-based MVP) */}
       {(() => {
