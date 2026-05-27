@@ -2555,10 +2555,45 @@ function TodayScoreCard({ data, onAction }) {
   const score = computeTodayScore(data);
   const summary = generateDailySummary(data);
   const oneAction = todayOneAction(data);
+  const [trend, setTrend] = useState(null); // { dir: "up"|"flat"|"down", delta: +N|0|-N }
+
+  // Persist today's score + compute trend vs 7-day rolling average
+  useEffect(() => {
+    let cancelled = false;
+    async function go() {
+      try {
+        const today = getToday();
+        // Load existing history
+        let history = {};
+        try {
+          const r = await window.storage.get("ft:dailyScores");
+          if (r && r.value) history = JSON.parse(r.value) || {};
+        } catch {}
+        // Write today's score (overwrites — score reflects current state of the day)
+        history[today] = { composite: score.composite, pillars: score.pillars, ts: Date.now() };
+        // Keep last 30 days only
+        const cutoff = (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 30); return toLocalDateStr(d); })();
+        for (const k of Object.keys(history)) if (k < cutoff) delete history[k];
+        await window.storage.set("ft:dailyScores", JSON.stringify(history));
+        // Compute trend: today vs avg of previous up-to-7 days
+        const prevDates = Object.keys(history).filter(d => d < today).sort().slice(-7);
+        if (prevDates.length === 0) { if (!cancelled) setTrend(null); return; }
+        const avg = prevDates.reduce((a, d) => a + (history[d].composite || 0), 0) / prevDates.length;
+        const delta = Math.round(score.composite - avg);
+        const dir = delta > 4 ? "up" : delta < -4 ? "down" : "flat";
+        if (!cancelled) setTrend({ dir, delta, n: prevDates.length });
+      } catch {}
+    }
+    go();
+    return () => { cancelled = true; };
+  }, [score.composite]);
+
   const labelColor = score.composite >= 85 ? C.lime
                    : score.composite >= 70 ? C.teal
                    : score.composite >= 55 ? C.amber
                    : C.orange;
+  const trendIcon = trend ? (trend.dir === "up" ? "▲" : trend.dir === "down" ? "▼" : "▬") : "";
+  const trendColor = trend ? (trend.dir === "up" ? C.lime : trend.dir === "down" ? C.orange : C.grayMid) : C.gray;
   const pillarMeta = [
     { key:"training", label:"TRAINING", max:30, color:"#9D7FFF" },
     { key:"fuel",     label:"FUEL",     max:30, color:"#FFB800" },
@@ -2571,6 +2606,11 @@ function TodayScoreCard({ data, onAction }) {
         <div>
           <div style={{ fontFamily:F.mono, fontSize:10, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>TODAY SCORE</div>
           <div style={{ fontFamily:F.display, fontSize:22, color:labelColor, letterSpacing:2, lineHeight:1 }}>{score.label}</div>
+          {trend && (
+            <div style={{ fontFamily:F.mono, fontSize:10, color:trendColor, marginTop:4, letterSpacing:0.5 }}>
+              {trendIcon} {trend.delta > 0 ? "+" : ""}{trend.delta} vs {trend.n}d avg
+            </div>
+          )}
         </div>
         <PetalFlower pillars={score.pillars} composite={score.composite} color={labelColor} />
       </div>
