@@ -55,7 +55,7 @@ export default [
     rules: {
       // Matching original .eslintrc.cjs rules
       "react/prop-types": "off",
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" }],
       "react-hooks/exhaustive-deps": "warn",
 
       // Pre-existing in codebase — downgrade to warn, not blocking

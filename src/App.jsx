@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
-import { Dumbbell, Utensils, TrendingUp, User, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings, Brain } from "lucide-react";
+import { Dumbbell, Utensils, User, Home, X, Plus, Zap, ChevronRight, Check, Settings, Brain } from "lucide-react";
 
 // ── Storage helpers ───────────────────────────────────────────────
 async function sGet(key, fallback) {
@@ -97,7 +97,7 @@ export class ErrorBoundary extends React.Component {
               try {
                 const keys = await window.storage.list();
                 await Promise.all(keys.map(k => window.storage.delete(k)));
-              } catch(e) {
+              } catch(_e) {
                 localStorage.clear();
               }
               window.location.reload();
@@ -1007,9 +1007,6 @@ function getTodayLabel() {
 function calc1RM(w, r) { return r === 1 ? w : Math.round(w * (1 + r / 30)); }
 
 // ── Active workout (in-progress session) persistence ──────────────
-const ACTIVE_WORKOUT_KEY = "ft:activeWorkout";
-const ACTIVE_WORKOUT_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
-
 // ── Live structured session (TodayTab) persistence ─────────────────
 const LIVE_SESSION_KEY = "ft:liveSession";
 const LIVE_SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
@@ -1025,16 +1022,7 @@ function fmtRelativeTime(ts) {
   return `${h}h ${m % 60}m ago`;
 }
 
-// Look up the most recent recorded performance for an exercise (data.workouts is newest-first)
-function lookupLastPerformance(exerciseName, workouts) {
-  if (!exerciseName) return null;
-  const lower = exerciseName.toLowerCase();
-  for (const w of workouts || []) {
-    const ex = (w.exercises || []).find(e => e.name && e.name.toLowerCase() === lower);
-    if (ex) return { date: w.date, sets: ex.sets };
-  }
-  return null;
-}
+
 
 // Inline PR detection: would this weight×reps beat the existing PR?
 function isPotentialPR(exerciseName, weight, reps, prs) {
@@ -1903,7 +1891,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       setSavedFlash(true);
       clearForm();
       setTimeout(() => setSavedFlash(false), 1200);
-    } catch (e) {
+    } catch (_e) {
       setAiMsg("Save failed — try again");
     }
     setSaving(false);
@@ -2021,7 +2009,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           ) : (
             <div style={{ background:`${C.orange}15`, border:`1px solid ${C.orange}`, borderRadius:8, padding:10 }}>
               <div style={{ fontFamily:F.mono, fontSize:11, color:C.orange, marginBottom:8, textAlign:"center", lineHeight:1.4 }}>
-                Zero all macros for {isHistorical ? logDate : "today"}? This can't be undone.
+                Zero all macros for {isHistorical ? logDate : "today"}? This can{"'"} be undone.
               </div>
               <div style={{ display:"flex", gap:8 }}>
                 <button onClick={() => setResetConfirming(false)} disabled={resetting}
@@ -2252,464 +2240,6 @@ function MealModal({ data, updateData, onClose, initialDate }) {
   );
 }
 
-// ── Workout Modal (Hevy-style) ─────────────────────────────────────
-function WorkoutModal({ data, updateData, onClose }) {
-  const dayName = DAYS[new Date().getDay()];
-  const [split, setSplit] = useState(SPLIT_MAP[dayName] || "Upper A");
-  const [note, setNote] = useState("");
-  const [startTime, setStartTime] = useState(Date.now());
-  const [exercises, setExercises] = useState([]);
-  const [exQuery, setExQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
-  const [restStartTime, setRestStartTime] = useState(null); // null = not resting; ms timestamp = resting since
-  const [now, setNow] = useState(Date.now());
-  const [hasRestored, setHasRestored] = useState(false); // gate autosave until initial load completes
-  const [resumedAt, setResumedAt] = useState(null); // timestamp of restored session for banner
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  // Tick clock for session/rest timers — uses Date.now() so survives backgrounding
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  // ── Restore in-progress session on mount ───────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const raw = await window.storage.get(ACTIVE_WORKOUT_KEY);
-        if (raw && raw.value && !cancelled) {
-          const parsed = JSON.parse(raw.value);
-          if (parsed && parsed.ts && (Date.now() - parsed.ts < ACTIVE_WORKOUT_TTL_MS)) {
-            if (parsed.split) setSplit(parsed.split);
-            if (parsed.note) setNote(parsed.note);
-            if (Array.isArray(parsed.exercises) && parsed.exercises.length > 0) {
-              setExercises(parsed.exercises);
-              setStartTime(parsed.startTime || parsed.ts);
-              setResumedAt(parsed.ts);
-            }
-          } else {
-            // stale, clean up
-            try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch (_e) { /* best-effort */ }
-          }
-        }
-      } catch (_e) { /* best-effort */ }
-      if (!cancelled) setHasRestored(true);
-    })();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // ── Auto-save on every change once any exercise exists ─────────
-  useEffect(() => {
-    if (!hasRestored) return;
-    if (exercises.length === 0) return; // no real session yet
-    const payload = { ts: Date.now(), startTime, split, note, exercises };
-    window.storage.set(ACTIVE_WORKOUT_KEY, JSON.stringify(payload)).catch(() => {});
-  }, [exercises, split, note, hasRestored, startTime]);
-
-  const filteredEx = exQuery.length >= 1
-    ? EXERCISE_LIST.filter(e => e.name.toLowerCase().includes(exQuery.toLowerCase())).slice(0, 6)
-    : [];
-
-  function addExercise(name) {
-    setExercises(prev => [...prev, { id: Date.now(), name, sets: [{ weight:"", reps:"", done:false }] }]);
-    setExQuery("");
-    setShowSearch(false);
-  }
-
-  function addSet(exId) {
-    setExercises(prev => prev.map(ex => {
-      if (ex.id !== exId) return ex;
-      const lastWeight = ex.sets[ex.sets.length - 1]?.weight || "";
-      return { ...ex, sets: [...ex.sets, { weight:lastWeight, reps:"", done:false }] };
-    }));
-  }
-
-  function removeSet(exId) {
-    setExercises(prev => prev.map(ex => {
-      if (ex.id !== exId || ex.sets.length <= 1) return ex;
-      return { ...ex, sets: ex.sets.slice(0, -1) };
-    }));
-  }
-
-  function updateSet(exId, idx, field, val) {
-    setExercises(prev => prev.map(ex => {
-      if (ex.id !== exId) return ex;
-      const sets = ex.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s);
-      return { ...ex, sets };
-    }));
-  }
-
-  function toggleDone(exId, idx) {
-    let nowDone = false;
-    setExercises(prev => prev.map(ex => {
-      if (ex.id !== exId) return ex;
-      const sets = ex.sets.map((s, i) => {
-        if (i !== idx) return s;
-        nowDone = !s.done;
-        return { ...s, done: nowDone };
-      });
-      return { ...ex, sets };
-    }));
-    // Only start rest timer when checking a set as DONE, not when un-checking
-    if (nowDone) {
-      setRestStartTime(Date.now());
-    }
-  }
-
-  function stopRestTimer() {
-    setRestStartTime(null);
-  }
-
-  function removeExercise(exId) {
-    setExercises(prev => prev.filter(ex => ex.id !== exId));
-  }
-
-  async function save() {
-    if (saving) return;
-    const doneSets = exercises.flatMap(ex => ex.sets.filter(s => s.done));
-    if (doneSets.length === 0) return; // guard against empty save
-    setSaving(true);
-    try {
-      const dur = Math.round((Date.now() - startTime) / 60000);
-      const totalVol = doneSets.reduce((acc, s) => acc + (parseFloat(s.weight) || 0) * (parseInt(s.reps) || 0), 0);
-      const exLog = exercises.filter(ex => ex.sets.some(s => s.done)).map(ex => ({
-        name: ex.name,
-        sets: ex.sets.filter(s => s.done).map(s => `${s.weight}×${s.reps}`).join(", "),
-      }));
-
-      let prCount = 0;
-      const updatedPRs = [...data.prs];
-      exercises.forEach(ex => {
-        ex.sets.filter(s => s.done && s.weight && s.reps).forEach(s => {
-          const w = parseFloat(s.weight);
-          const r = parseInt(s.reps);
-          const new1 = calc1RM(w, r);
-          const existIdx = updatedPRs.findIndex(p => p.exercise.toLowerCase() === ex.name.toLowerCase());
-          if (existIdx >= 0) {
-            const old1 = calc1RM(updatedPRs[existIdx].weight, updatedPRs[existIdx].reps);
-            if (new1 > old1) { updatedPRs[existIdx] = { exercise:ex.name, weight:w, reps:r, date:getToday() }; prCount++; }
-          } else {
-            updatedPRs.push({ exercise:ex.name, weight:w, reps:r, date:getToday() });
-            prCount++;
-          }
-        });
-      });
-
-      if (prCount > 0) await updateData("prs", updatedPRs);
-      const newW = {
-        id: `w${Date.now()}`, date:getToday(), name:split, split,
-        note: note ? `"${note}"` : "",
-        duration: dur, volume: Math.round(totalVol),
-        sets: doneSets.length, prs: prCount,
-        exercises: exLog,
-      };
-      await updateData("workouts", [newW, ...data.workouts]);
-      // Clear active session storage now that workout is saved
-      try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch (_e) { /* best-effort */ }
-      onClose();
-    } catch (e) {
-      console.error("Save workout failed:", e);
-    }
-    setSaving(false);
-  }
-
-  async function discardSession() {
-    try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch (_e) { /* best-effort */ }
-    setShowCloseConfirm(false);
-    setResumedAt(null);
-    onClose();
-  }
-
-  function attemptClose() {
-    // If there's any meaningful activity, ask first
-    const hasActivity = exercises.some(ex => ex.sets.some(s => s.done || (s.weight && s.weight !== "") || (s.reps && s.reps !== "")));
-    if (hasActivity) {
-      setShowCloseConfirm(true);
-    } else {
-      // Nothing of value — wipe any orphan storage and close
-      window.storage.delete(ACTIVE_WORKOUT_KEY).catch(() => {});
-      onClose();
-    }
-  }
-
-  const doneSets = exercises.reduce((acc, ex) => acc + ex.sets.filter(s => s.done).length, 0);
-  const sessionSecs = Math.floor((now - startTime) / 1000);
-  const restSecs = restStartTime ? Math.floor((now - restStartTime) / 1000) : 0;
-  const fmt = secs => `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-  const restColor = restSecs < 90 ? C.lime : restSecs < 120 ? C.amber : C.orange;
-
-  return (
-    <Sheet onClose={attemptClose} title="LOG SESSION">
-      {/* Resumed-session banner */}
-      {resumedAt && (
-        <div style={{ background:`${C.amber}15`, border:`1px solid ${C.amber}40`, borderRadius:8, padding:"8px 12px", marginBottom:14, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.amber, lineHeight:1.4 }}>
-            ⟲ RESUMED · session from {fmtRelativeTime(resumedAt)}
-          </div>
-          <div style={{ display:"flex", gap:6 }}>
-            <button onClick={discardSession} title="Discard restored session and start fresh"
-              style={{ fontFamily:F.mono, fontSize:11, color:C.gray, background:"transparent", border:`1px solid ${C.border}`, borderRadius:5, padding:"3px 8px", cursor:"pointer", letterSpacing:0.5 }}>
-              ↻ FRESH
-            </button>
-            <button onClick={() => setResumedAt(null)} aria-label="Dismiss"
-              style={{ background:"none", border:"none", color:C.gray, cursor:"pointer", padding:2, display:"flex", alignItems:"center" }}>
-              <X size={12} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Split */}
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginBottom:14 }}>
-        {["Upper A","Lower A","Upper B","Lower B"].map(s => (
-          <button
-            key={s}
-            onClick={() => setSplit(s)}
-            style={{
-              padding: "7px 14px",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontFamily: F.mono,
-              fontSize: 11,
-              background: split === s ? C.lime : "#1A1A22",
-              border: `1px solid ${split === s ? C.lime : C.border}`,
-              color: split === s ? C.dark : C.gray,
-            }}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-
-      {/* Timers */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:14 }}>
-        <div style={{ background:"#1A1A22", borderRadius:10, padding:"8px 12px", textAlign:"center" }}>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:2 }}>SESSION</div>
-          <div style={{ fontFamily:F.display, fontSize:22, color:C.white }}>{fmt(sessionSecs)}</div>
-        </div>
-        <div onClick={restStartTime ? stopRestTimer : undefined}
-          style={{ background:"#1A1A22", borderRadius:10, padding:"8px 12px", textAlign:"center", cursor: restStartTime ? "pointer" : "default", border: restStartTime ? `1px solid ${restColor}40` : "1px solid transparent" }}>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:2 }}>REST{restStartTime ? " · TAP TO STOP" : ""}</div>
-          <div style={{ fontFamily:F.display, fontSize:22, color:restStartTime ? restColor : C.gray }}>
-            {restStartTime ? fmt(restSecs) : "--:--"}
-          </div>
-        </div>
-      </div>
-
-      {/* Exercises */}
-      {exercises.map(ex => {
-        const last = lookupLastPerformance(ex.name, data.workouts);
-        return (
-          <div key={ex.id} style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 14px", marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: last ? 4 : 10 }}>
-              <div style={{ fontSize:13, fontWeight:600, color:C.white, flex:1 }}>{ex.name}</div>
-              <button onClick={() => removeExercise(ex.id)} style={{ background:"none", border:"none", cursor:"pointer", padding:4, color:C.gray }}>
-                <X size={14} />
-              </button>
-            </div>
-            {last && (
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, marginBottom:8, opacity:0.7, lineHeight:1.3 }}>
-                Last {last.date}: {last.sets}
-              </div>
-            )}
-            <div style={{ display:"grid", gridTemplateColumns:"24px 1fr 1fr 36px", gap:6, marginBottom:6 }}>
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>SET</div>
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>LBS</div>
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>REPS</div>
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>✓</div>
-            </div>
-            {ex.sets.map((s, idx) => {
-              const showPR = isPotentialPR(ex.name, s.weight, s.reps, data.prs);
-              return (
-                <div key={idx} style={{ position:"relative", display:"grid", gridTemplateColumns:"24px 1fr 1fr 36px", gap:6, marginBottom:6, alignItems:"center" }}>
-                  {showPR && (
-                    <div style={{ position:"absolute", left:24, top:-7, background:C.amber, color:C.dark, fontFamily:F.mono, fontSize:8, fontWeight:700, padding:"1px 5px", borderRadius:3, letterSpacing:0.5, zIndex:1, lineHeight:1.2 }}>
-                      🔥 PR
-                    </div>
-                  )}
-                  <div style={{ fontFamily:F.mono, fontSize:11, color:s.done ? C.lime : C.gray, textAlign:"center" }}>{idx + 1}</div>
-                  <input
-                    value={s.weight}
-                    onChange={e => updateSet(ex.id, idx, "weight", e.target.value)}
-                    placeholder="lbs"
-                    type="number"
-                    inputMode="decimal"
-                    style={{ background:s.done?"#0A1A00":"#111116", border:`1px solid ${s.done?C.lime:C.border}`, borderRadius:8, padding:"8px 10px", color:s.done?C.lime:C.white, fontSize:14, fontFamily:F.mono, outline:"none", width:"100%", boxSizing:"border-box" }}
-                  />
-                  <input
-                    value={s.reps}
-                    onChange={e => updateSet(ex.id, idx, "reps", e.target.value)}
-                    placeholder="reps"
-                    type="number"
-                    inputMode="numeric"
-                    style={{ background:s.done?"#0A1A00":"#111116", border:`1px solid ${s.done?C.lime:C.border}`, borderRadius:8, padding:"8px 10px", color:s.done?C.lime:C.white, fontSize:14, fontFamily:F.mono, outline:"none", width:"100%", boxSizing:"border-box" }}
-                  />
-                  <button
-                    onClick={() => toggleDone(ex.id, idx)}
-                    style={{ width:36, height:36, borderRadius:8, border:`2px solid ${s.done?C.lime:C.border}`, background:s.done?`${C.lime}25`:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}
-                  >
-                    {s.done && <Check size={16} color={C.lime} />}
-                  </button>
-                </div>
-              );
-            })}
-            <div style={{ display:"flex", gap:8, marginTop:8 }}>
-              <button onClick={() => addSet(ex.id)} style={{ flex:1, padding:"7px", borderRadius:8, border:`1px dashed ${C.border}`, background:"none", fontFamily:F.mono, fontSize:11, color:C.gray, cursor:"pointer" }}>
-                + ADD SET
-              </button>
-              {ex.sets.length > 1 && (
-                <button onClick={() => removeSet(ex.id)} style={{ padding:"7px 10px", borderRadius:8, border:`1px solid ${C.border}`, background:"none", fontFamily:F.mono, fontSize:11, color:C.gray, cursor:"pointer" }}>
-                  −
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Add Exercise */}
-      <div style={{ marginBottom:14 }}>
-        {showSearch ? (
-          <div>
-            <input
-              value={exQuery}
-              onChange={e => setExQuery(e.target.value)}
-              placeholder="Search exercise..."
-              autoFocus
-              style={{ width:"100%", background:"#1A1A22", border:`1px solid ${C.lime}`, borderRadius:10, padding:"11px 14px", color:C.white, fontSize:14, fontFamily:F.mono, outline:"none", boxSizing:"border-box", marginBottom:4 }}
-            />
-            {filteredEx.length > 0 && (
-              <div style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:10, overflow:"hidden" }}>
-                {filteredEx.map((ex, i) => (
-                  <div
-                    key={ex.name}
-                    onClick={() => addExercise(ex.name)}
-                    style={{ padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.grayLight, borderBottom:i < filteredEx.length-1 ? `1px solid ${C.border}` : "none", cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}
-                  >
-                    <span>{ex.name}</span>
-                    <span style={{ fontSize:11, color:C.gray }}>{ex.muscle}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {exQuery && filteredEx.length === 0 && (
-              <div
-                onClick={() => addExercise(exQuery)}
-                style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.lime, cursor:"pointer" }}
-              >
-                Add "{exQuery}"
-              </div>
-            )}
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowSearch(true)}
-            style={{ width:"100%", padding:"12px", borderRadius:12, border:`1px dashed ${C.lime}`, background:`${C.lime}08`, fontFamily:F.display, fontSize:18, color:C.lime, cursor:"pointer", letterSpacing:0.5 }}
-          >
-            + ADD EXERCISE
-          </button>
-        )}
-      </div>
-
-      <div style={{ marginBottom:16 }}>
-        <FInput label="Session vibe / note" value={note} onChange={setNote} placeholder='"These legs are goofy"' type="text" />
-      </div>
-
-      {/* Sticky bottom bar — stats + finish button always reachable */}
-      <div style={{
-        position: "sticky",
-        bottom: -40,
-        marginLeft: -20,
-        marginRight: -20,
-        marginTop: 14,
-        paddingLeft: 20,
-        paddingRight: 20,
-        paddingTop: 12,
-        paddingBottom: 44,
-        background: "linear-gradient(to bottom, rgba(17,17,22,0) 0%, rgba(17,17,22,0.92) 22%, #111116 60%)",
-        zIndex: 5,
-      }}>
-        <div style={{ background:"#1A1A22", borderRadius:10, padding:"8px 14px", marginBottom:10, display:"flex", gap:24, justifyContent:"space-around" }}>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontFamily:F.mono, fontSize:16, color:C.lime, fontWeight:600 }}>{doneSets}</div>
-            <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray }}>SETS DONE</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontFamily:F.mono, fontSize:16, color:C.teal, fontWeight:600 }}>{exercises.length}</div>
-            <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray }}>EXERCISES</div>
-          </div>
-          <div style={{ textAlign:"center" }}>
-            <div style={{ fontFamily:F.mono, fontSize:16, color:C.white, fontWeight:600 }}>{fmt(sessionSecs)}</div>
-            <div style={{ fontFamily:F.mono, fontSize:8, color:C.gray }}>TIME</div>
-          </div>
-        </div>
-        <button
-          onClick={save}
-          disabled={saving || doneSets === 0}
-          style={{
-            width: "100%",
-            background: doneSets === 0 ? "#1A1A22" : (saving ? "#1A1A22" : C.lime),
-            border: "none",
-            borderRadius: 12,
-            padding: 14,
-            fontFamily: F.display,
-            fontSize: 18,
-            color: doneSets === 0 ? C.gray : (saving ? C.gray : C.dark),
-            cursor: (saving || doneSets === 0) ? "default" : "pointer",
-            letterSpacing: 1,
-          }}
-        >
-          {saving
-            ? "⏳ SAVING..."
-            : doneSets === 0
-              ? "✓ A SET TO ENABLE FINISH"
-              : `FINISH SESSION (${doneSets} SET${doneSets === 1 ? "" : "S"})`}
-        </button>
-      </div>
-
-      {/* Close-confirmation dialog */}
-      {showCloseConfirm && (
-        <div onClick={() => setShowCloseConfirm(false)}
-          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:400, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:14, padding:20, maxWidth:380, width:"100%" }}>
-            <div style={{ fontFamily:F.display, fontSize:20, color:C.amber, marginBottom:6, letterSpacing:0.5 }}>
-              ACTIVE SESSION
-            </div>
-            <div style={{ fontFamily:F.body, fontSize:13, color:C.grayLight, marginBottom:18, lineHeight:1.5 }}>
-              You have unsaved sets. Your progress is auto-saved and will resume next time you open this — but you can also finish or discard now.
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {doneSets > 0 && (
-                <button onClick={async () => { setShowCloseConfirm(false); await save(); }}
-                  style={{ width:"100%", padding:"12px", borderRadius:10, fontFamily:F.mono, fontSize:12, fontWeight:700, background:C.lime, color:C.dark, border:"none", cursor:"pointer", letterSpacing:1 }}>
-                  ✓ FINISH & SAVE ({doneSets} SETS)
-                </button>
-              )}
-              <button onClick={() => setShowCloseConfirm(false)}
-                style={{ width:"100%", padding:"12px", borderRadius:10, fontFamily:F.mono, fontSize:12, background:"#0E0E14", color:C.white, border:`1px solid ${C.border}`, cursor:"pointer", letterSpacing:1 }}>
-                ← KEEP GOING
-              </button>
-              <button onClick={() => { setShowCloseConfirm(false); onClose(); }}
-                style={{ width:"100%", padding:"12px", borderRadius:10, fontFamily:F.mono, fontSize:12, background:"transparent", color:C.gray, border:`1px solid ${C.border}`, cursor:"pointer", letterSpacing:1 }}>
-                ⏸ EXIT (auto-save keeps your progress)
-              </button>
-              <button onClick={discardSession}
-                style={{ width:"100%", padding:"12px", borderRadius:10, fontFamily:F.mono, fontSize:11, background:"transparent", color:C.orange, border:`1px solid ${C.orange}40`, cursor:"pointer", letterSpacing:1 }}>
-                🗑 DISCARD SESSION
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </Sheet>
-  );
-}
-
 // ── PR Modal ──────────────────────────────────────────────────────
 function PRModal({ data, updateData, onClose }) {
   const [query, setQuery] = useState("");
@@ -2762,7 +2292,7 @@ function PRModal({ data, updateData, onClose }) {
           )}
           {!result.isNew && (
             <div style={{ marginTop:16, fontFamily:F.mono, fontSize:11, color:C.gray }}>
-              Didn't beat existing PR — keep grinding 💪
+              Didn{"'"} beat existing PR — keep grinding 💪
             </div>
           )}
         </div>
@@ -2809,7 +2339,7 @@ function PRModal({ data, updateData, onClose }) {
             onClick={() => { setSel(query); setQuery(""); }}
             style={{ background:"#1A1A22", border:`1px solid ${C.border}`, borderRadius:10, marginTop:4, padding:"10px 14px", fontSize:13, fontFamily:F.mono, color:C.lime, cursor:"pointer" }}
           >
-            Use "{query}" (custom)
+            Use &quot;{query}&quot; (custom)
           </div>
         )}
       </div>
@@ -2873,7 +2403,7 @@ function MeasurementsModal({ data, updateData, onClose }) {
           return (
             <div key={f.key}>
               <div style={{ fontFamily:F.mono, fontSize:11, color:f.color, textTransform:"uppercase", letterSpacing:1, marginBottom:5 }}>
-                {f.label}{p && <span style={{ color:C.gray, marginLeft:6 }}>prev:{p}"</span>}
+                {f.label}{p && <span style={{ color:C.gray, marginLeft:6 }}>prev:{p}&quot;</span>}
               </div>
               <input
                 value={vals[f.key]}
@@ -2934,7 +2464,7 @@ function MobileWebViewBanner() {
             CLAUDE.AI MOBILE APP DETECTED
           </div>
           <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.5 }}>
-            File uploads (food photos, progress pics) won't work here. Switch to your phone's browser to upload.
+            File uploads (food photos, progress pics) won{"'"} work here. Switch to your phone{"'"} browser to upload.
           </div>
           {!expanded ? (
             <button onClick={() => setExpanded(true)}
@@ -2950,7 +2480,7 @@ function MobileWebViewBanner() {
                 <div>4. Open this conversation, then this artifact</div>
               </div>
               <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:8, lineHeight:1.4 }}>
-                Your data is the same in both — same account, same storage. Don't use Publish/Share Link, that creates a separate public copy.
+                Your data is the same in both — same account, same storage. Don{"'"} use Publish/Share Link, that creates a separate public copy.
               </div>
               <button onClick={() => setExpanded(false)}
                 style={{ marginTop:8, background:"none", border:"none", color:C.gray, fontFamily:F.mono, fontSize:11, padding:0, cursor:"pointer", textDecoration:"underline" }}>
@@ -3038,7 +2568,7 @@ function BackupNagBanner() {
 
 // ── QuadrantRings — Whoop-style 2x2 ring grid, composite center (V2.1) ──
 // Each pillar normalized to /100 for display. Composite center circle.
-function QuadrantRings({ pillars, composite, color, onRingTap }) {
+function QuadrantRings({ pillars, _composite, _color, onRingTap }) {
   const [anim, setAnim] = useState(0);
   useEffect(() => {
     let rafId;
@@ -3092,7 +2622,7 @@ function TodayScoreCard({ data, onAction }) {
   const score = computeTodayScore(data);
   const summary = generateDailySummary(data);
   const oneAction = todayOneAction(data);
-  const [scoreHistory, setScoreHistory] = useState({});
+  const [_scoreHistory, setScoreHistory] = useState({});
   const [trend, setTrend] = useState(null);
   const [activePillar, setActivePillar] = useState(null);
 
@@ -3133,7 +2663,7 @@ function TodayScoreCard({ data, onAction }) {
     }
     go();
     return () => { cancelled = true; };
-  }, [score.composite, today]);
+  }, [score.composite, score.pillars, today]);
 
   // Morning framing: suppress "SLIPPING" before any data is logged
   const rawLabelColor = score.composite >= 85 ? C.lime
@@ -3178,7 +2708,7 @@ function TodayScoreCard({ data, onAction }) {
 }
 
 // ── PillarInfoDrawer — bottom-sheet pillar detail (tap any ring) ─────────
-function PillarInfoDrawer({ pillar, score, data, onClose }) {
+function PillarInfoDrawer({ pillar, score, _data, onClose }) {
   const info = PILLAR_INFO[pillar];
   if (!info) return null;
   const dayName = DAYS[new Date().getDay()];
@@ -3393,7 +2923,7 @@ function WeeklyCheckinModal({ data, updateData, onClose }) {
 
       {/* Weight trend */}
       <div style={{ marginBottom:16 }}>
-        <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:8, letterSpacing:1 }}>HOW'S YOUR WEIGHT TRENDING?</div>
+        <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:8, letterSpacing:1 }}>HOW{"'"} YOUR WEIGHT TRENDING?</div>
         <div style={{ display:"flex", gap:8 }}>
           {[{v:"down",l:"↓ Dropping"},{v:"stable",l:"→ Stable"},{v:"up",l:"↑ Rising"}].map(o => (
             <button key={o.v} onClick={() => setWeightTrend(o.v)}
@@ -3486,7 +3016,6 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
       pushBackupToGit().catch(() => {}); // silent failure; user can see status in COACH card
     }
   }, []);
-  const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
   const lastWeight = [...data.weightLog].filter(w => w.weight).pop();
   const currentW = lastWeight?.weight || 175.8;
   const todayEntry = data.weightLog.find(w => w.date === t);
@@ -3494,13 +3023,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
   const dayName = DAYS[new Date().getDay()];
   const todayWo = SPLIT_MAP[dayName];
   const isRest = !todayWo;
-  const calTarget = isRest ? data.profile.calorieTarget.rest : data.profile.calorieTarget.training;
-  const macros = [
-    { label:"kcal", val:todayMeals.calories, target:calTarget, color:C.lime },
-    { label:"protein", val:todayMeals.protein, target:data.profile.proteinTarget, color:C.teal },
-    { label:"carbs", val:todayMeals.carbs, target:data.profile.carbTarget, color:C.orange },
-    { label:"fat", val:todayMeals.fat, target:data.profile.fatTarget, color:C.purple },
-  ];
+
   const lastWo = data.workouts[0];
   const woColor = todayWo ? WORKOUTS[todayWo]?.color : C.gray;
 
@@ -3595,7 +3118,7 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
               <text x={22} y={26} textAnchor="middle" fill={scoreColor} style={{ fontFamily:"monospace", fontSize:11, fontWeight:700 }}>{score}%</text>
             </svg>
           </div>
-          {displayItems.map((item, i) => (
+          {displayItems.map((item, _i) => (
             <div key={item.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 0", borderTop:`1px solid ${C.border}` }}>
               <div style={{ width:18, height:18, borderRadius:5, border:`1.5px solid ${C.border}`, background:"transparent", flexShrink:0 }} />
               <div style={{ flex:1 }}>
@@ -3756,7 +3279,7 @@ function getPrescription(exerciseName, workoutHistory, exerciseDef) {
   let lastWeight = null;
   let lastReps = null;
   let lastDate = null;
-  let lastSetCount = 0;
+  // lastSetCount removed — assigned but never read
   let lastTopHits = 0; // how many sets hit the top of the rep range
 
   for (const session of workoutHistory) {
@@ -3771,7 +3294,7 @@ function getPrescription(exerciseName, workoutHistory, exerciseDef) {
         if (setMatches.length > 0) {
           // Use the working sets (middle/last ones, not warmups)
           const workingSets = setMatches.slice(-numSets);
-          lastSetCount = workingSets.length;
+
           const topSet = workingSets[workingSets.length - 1];
           lastWeight = parseFloat(topSet[1]);
           lastReps = parseInt(topSet[2]);
@@ -3813,137 +3336,6 @@ function getPrescription(exerciseName, workoutHistory, exerciseDef) {
   }
 }
 
-
-// ── Workout Preview (read-only, any day) ──────────────────────────
-function WorkoutPreview({ wo, workoutHistory, isToday }) {
-  const [expandedEx, setExpandedEx] = useState(null);
-
-  return (
-    <div>
-      {/* Preview banner if not today */}
-      {!isToday && (
-        <div style={{ background:`${wo.color}12`, border:`1px solid ${wo.color}30`, borderRadius:10, padding:"8px 14px", marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
-          <div style={{ fontSize:14 }}>👁</div>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:wo.color }}>PREVIEW MODE — not today's session. Come back on {Object.entries(SPLIT_MAP).find(([k,v]) => v === wo.label.replace(" ", " "))?.[0] || "your scheduled day"} to log it live.</div>
-        </div>
-      )}
-
-      {/* Coach note */}
-      <div style={{ background:`${wo.color}10`, border:`1px solid ${wo.color}25`, borderRadius:10, padding:"10px 14px", marginBottom:14 }}>
-        <div style={{ fontFamily:F.mono, fontSize:11, color:wo.color, lineHeight:1.7 }}>💡 {wo.note}</div>
-      </div>
-
-      {/* Exercise cards */}
-      {wo.exercises.map((ex, exIdx) => {
-        const isOpen = expandedEx === exIdx;
-        const rx = getPrescription(ex.name, workoutHistory, ex);
-        const statusColor = rx.status === "progress" ? C.lime : rx.status === "build" ? C.teal : C.grayMid;
-
-        return (
-          <div
-            key={exIdx}
-            style={{ background:C.surface, border:`1px solid ${isOpen ? wo.color : C.border}`, borderRadius:14, marginBottom:10, overflow:"hidden" }}
-          >
-            <div onClick={() => setExpandedEx(isOpen ? null : exIdx)} style={{ padding:"13px 16px", cursor:"pointer" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:14, fontWeight:600, marginBottom:5 }}>{ex.name}</div>
-                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
-                    <div style={{ background:`${wo.color}18`, border:`1px solid ${wo.color}50`, borderRadius:5, padding:"2px 8px", fontFamily:F.mono, fontSize:11, color:wo.color }}>
-                      {ex.sets} × {ex.reps}
-                    </div>
-                    {rx.prescribedWeight && (
-                      <div style={{ background:`${statusColor}18`, border:`1px solid ${statusColor}50`, borderRadius:5, padding:"2px 8px", fontFamily:F.mono, fontSize:11, color:statusColor, fontWeight:600 }}>
-                        🎯 {rx.prescribedWeight} lbs
-                      </div>
-                    )}
-                    {rx.status === "progress" && <div style={{ fontFamily:F.mono, fontSize:11, color:C.lime }}>↑ ADD WEIGHT</div>}
-                    {rx.status === "build" && <div style={{ fontFamily:F.mono, fontSize:11, color:C.teal }}>BEAT THE REPS</div>}
-                    {rx.status === "new" && <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>NEW — set baseline</div>}
-                  </div>
-                </div>
-                <ChevronRight size={15} color={C.gray} style={{ transform:isOpen?"rotate(90deg)":"none", transition:"transform .2s", flexShrink:0 }} />
-              </div>
-            </div>
-
-            {isOpen && (
-              <div style={{ borderTop:`1px solid ${C.border}` }}>
-                {/* Last session vs Target */}
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", borderBottom:`1px solid ${C.border}` }}>
-                  <div style={{ padding:"10px 14px", borderRight:`1px solid ${C.border}` }}>
-                    <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:5, letterSpacing:1 }}>LAST SESSION</div>
-                    {rx.lastWeight ? (
-                      <div>
-                        <div style={{ fontFamily:F.display, fontSize:24, color:C.grayMid, lineHeight:1 }}>{rx.lastWeight}</div>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayMid, marginTop:2 }}>lbs × {rx.lastReps} reps</div>
-                        {rx.lastDate && <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:3 }}>{rx.lastDate}</div>}
-                      </div>
-                    ) : (
-                      <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>No history yet</div>
-                    )}
-                  </div>
-                  <div style={{ padding:"10px 14px", background:rx.status==="progress"?"#0A1A00":rx.status==="build"?"#040E0C":C.surfaceAlt }}>
-                    <div style={{ fontFamily:F.mono, fontSize:11, color:statusColor, marginBottom:5, letterSpacing:1 }}>NEXT TARGET</div>
-                    {rx.prescribedWeight ? (
-                      <div>
-                        <div style={{ fontFamily:F.display, fontSize:24, color:statusColor, lineHeight:1 }}>{rx.prescribedWeight}</div>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:statusColor, marginTop:2 }}>lbs × {rx.prescribedReps}</div>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:statusColor, marginTop:3, opacity:.8 }}>
-                          {rx.status==="progress" ? "↑ READY TO GO HEAVIER" : "SAME WEIGHT, BEAT THE REPS"}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>Set your baseline</div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Set plan preview */}
-                <div style={{ padding:"10px 14px", borderBottom:`1px solid ${C.border}` }}>
-                  <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:8, letterSpacing:1 }}>SET PLAN</div>
-                  {Array.from({ length: parseInt(ex.sets) || 3 }).map((_, setIdx) => {
-                    const isLast = setIdx === (parseInt(ex.sets)||3) - 1;
-                    return (
-                      <div key={setIdx} style={{ display:"flex", alignItems:"center", gap:10, marginBottom:5 }}>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:isLast?C.orange:C.gray, width:20 }}>
-                          {isLast ? "🔥" : `S${setIdx+1}`}
-                        </div>
-                        <div style={{ fontFamily:F.mono, fontSize:13, color:rx.prescribedWeight ? wo.color : C.gray }}>
-                          {rx.prescribedWeight ? `${rx.prescribedWeight} lbs` : ex.current || "—"}
-                        </div>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayMid }}>× {rx.prescribedReps}</div>
-                        {isLast && <div style={{ fontFamily:F.mono, fontSize:11, color:C.orange }}>push to failure</div>}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Phase target + coaching note */}
-                <div style={{ padding:"10px 14px" }}>
-                  <div style={{ display:"flex", gap:14, marginBottom:8, flexWrap:"wrap" }}>
-                    <div>
-                      <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:2 }}>PHASE TARGET</div>
-                      <div style={{ fontFamily:F.mono, fontSize:11, color:wo.color }}>{ex.target}</div>
-                    </div>
-                    {ex.pr && (
-                      <div style={{ borderLeft:`1px solid ${C.border}`, paddingLeft:14 }}>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:2 }}>ALL-TIME PR</div>
-                        <div style={{ fontFamily:F.mono, fontSize:11, color:C.lime }}>{ex.pr}</div>
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ background:`${wo.color}10`, borderRadius:8, padding:"8px 12px" }}>
-                    <div style={{ fontFamily:F.mono, fontSize:11, color:wo.color, lineHeight:1.7 }}>📋 {ex.note}</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // ── TODAY Tab ─────────────────────────────────────────────────────
 // ── Edit Session modal (date/name/duration/note + per-set editing) ──
@@ -4081,7 +3473,7 @@ function EditSessionModal({ session, onSave, onClose }) {
         </div>
 
         <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginTop:12, lineHeight:1.4 }}>
-          Empty sets (no weight + no reps) are dropped on save. Volume + set count rebuild from what's left.
+          Empty sets (no weight + no reps) are dropped on save. Volume + set count rebuild from what{"'"} left.
         </div>
         <div style={{ display:"flex", gap:8, marginTop:14, position:"sticky", bottom:0, background:C.surface, paddingTop:8 }}>
           <button onClick={onClose} style={{ flex:1, padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>CANCEL</button>
@@ -4548,11 +3940,9 @@ function TodayTab({ data, updateData, onLogMeal }) {
         if (raw && raw.value) setCustomRoutines(JSON.parse(raw.value));
       } catch (_e) { /* best-effort */ }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // browseDay can be a WORKOUTS key or "freestyle" — wo resolves accordingly
-  const isLiveDay = browseDay === actualSplit; // kept for compat; less relevant now any day is startable
   const wo = loadedRoutine
     ? { ...FREESTYLE_WO, label:loadedRoutine.name.toUpperCase(), focus:`Custom · ${loadedRoutine.exercises.length} exercises`, color:C.purple, bg:"#0C0818", exercises:loadedRoutine.exercises }
     : browseDay === "freestyle" ? FREESTYLE_WO : WORKOUTS[browseDay];
@@ -4592,13 +3982,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
     return init;
   });
 
-  // Day tabs config
-  const dayTabs = [
-    { label:"MON", split:"Upper A", dayIdx:1 },
-    { label:"TUE", split:"Lower A", dayIdx:2 },
-    { label:"THU", split:"Upper B", dayIdx:4 },
-    { label:"FRI", split:"Lower B", dayIdx:5 },
-  ];
+
 
 
   useEffect(() => {
@@ -4647,7 +4031,6 @@ function TodayTab({ data, updateData, onLogMeal }) {
       if (!cancelled) setHasRestored(true);
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actualSplit]);
 
   // ── Auto-save on every meaningful change ───────────────────────
@@ -4700,7 +4083,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
       }).catch(() => {});
     }, 5000);
     return () => clearInterval(id);
-  }, [hasRestored, actualSplit, sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, finished]);
+  }, [hasRestored, actualSplit, sessionStarted, sessionStart, liveSets, sessionNote, restStartTime, restType, expandedEx, finished, browseDay]);
 
   // ── Force-save when tab hidden / backgrounded — mobile browsers can kill backgrounded tabs ─
   useEffect(() => {
@@ -4929,6 +4312,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
       try { navigator.vibrate && navigator.vibrate([150, 80, 150, 80, 150]); } catch (_e) { /* best-effort */ }
     }
     if (!restActive) setRestAlertFired(false); // reset for next set
+  // intentional: restAlertFired excluded — adding it causes the condition to re-evaluate after setRestAlertFired(true), breaking the one-shot pattern
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restDone, restActive]);
 
@@ -5230,7 +4614,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
                           )}
                         </div>
                         <div style={{ padding:"10px 14px", background:rx.status==="progress"?"#0A1A00":rx.status==="build"?"#040E0C":C.surfaceAlt }}>
-                          <div style={{ fontFamily:F.mono, fontSize:11, color:statusColor, marginBottom:5, letterSpacing:1 }}>TODAY'S TARGET</div>
+                          <div style={{ fontFamily:F.mono, fontSize:11, color:statusColor, marginBottom:5, letterSpacing:1 }}>TODAY{"'"} TARGET</div>
                           {rx.prescribedWeight ? (
                             <div>
                               <div style={{ fontFamily:F.display, fontSize:24, color:statusColor, lineHeight:1 }}>{rx.prescribedWeight}</div>
@@ -5405,7 +4789,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
         <div style={{ marginTop:14 }}>
           <Card>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
-              <SL>Today's Fuel</SL>
+              <SL>Today{"'"} Fuel</SL>
               <SBtn onClick={onLogMeal}>+ ADD MEAL</SBtn>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:10 }}>
@@ -5489,7 +4873,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
             <div style={{ fontFamily:F.display, fontSize:22, color:C.orange, marginBottom:8, letterSpacing:2 }}>DELETE SESSION?</div>
             <div style={{ fontFamily:F.body, fontSize:13, color:C.white, lineHeight:1.5, marginBottom:14 }}>
               <strong>{deleteTarget.name}</strong> from {deleteTarget.date} · {deleteTarget.duration}m · {deleteTarget.sets} sets
-              <div style={{ color:C.gray, fontSize:11, marginTop:6 }}>This can't be undone.</div>
+              <div style={{ color:C.gray, fontSize:11, marginTop:6 }}>This can{"'"} be undone.</div>
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={() => setDeleteTarget(null)} style={{ flex:1, padding:"10px", background:"transparent", border:`1px solid ${C.border}`, color:C.gray, borderRadius:8, fontFamily:F.mono, fontWeight:700, fontSize:12, letterSpacing:1, cursor:"pointer" }}>CANCEL</button>
@@ -5559,7 +4943,6 @@ function PlanTab({ data }) {
         if (raw && raw.value) setPlanCustom(JSON.parse(raw.value));
       } catch (_e) { /* best-effort */ }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const savePlanCustom = async (updated) => {
@@ -6198,7 +5581,6 @@ function getCompletenessItems(data) {
 // ── Coach Context Builder ─────────────────────────────────────────
 function buildCoachContext(data) {
   const currentW = [...data.weightLog].filter(w=>w.weight).pop()?.weight || 175.8;
-  const latestSleep = [...data.weightLog].filter(w=>w.sleep).pop();
   const latestMeasure = data.measurements?.[data.measurements.length-1];
   const recentMeals = Object.entries(data.meals).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,7);
   const recentWorkouts = data.workouts.slice(0,8);
@@ -6340,7 +5722,7 @@ function NextSessionPrescriptions({ data }) {
     <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
       <SL>⚡ Next Session Prescriptions</SL>
       <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:10, marginTop:-8 }}>
-        Progressive overload engine — tap any day to see what's prescribed
+        Progressive overload engine — tap any day to see what{"'"} prescribed
       </div>
       {readinessBanner && (
         <div style={{ background:readinessBanner.bg, border:`1px solid ${readinessBanner.color}40`,
@@ -6548,6 +5930,8 @@ function CoachChat({ data }) {
       setHistoryLoaded(true);
     }
     load();
+  // intentional: mount-only — welcome message uses data snapshot at load time; re-running would clobber loaded chat history
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Scroll the chat to the latest message — called EXPLICITLY after real user
@@ -7050,7 +6434,7 @@ function ApiKeyCard() {
   );
 }
 
-function CoachTab({ data, updateData, onAction }) {
+function CoachTab({ data, _updateData, onAction }) {
   const [analysis, setAnalysis] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [lastAnalysis, setLastAnalysis] = useState(null);
@@ -7212,7 +6596,7 @@ function CoachTab({ data, updateData, onAction }) {
         {!analyzing && !displayAnalysis && (
           <div style={{ textAlign:"center", padding:"20px 0" }}>
             <div style={{ fontSize:32, marginBottom:8 }}>📊</div>
-            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>Tap "Analyze Now" for a full coaching snapshot</div>
+            <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>Tap &quot;Analyze Now&quot; for a full coaching snapshot</div>
           </div>
         )}
         {!analyzing && displayAnalysis?.error && (
@@ -7355,7 +6739,7 @@ function BackupCard() {
       </button>
 
       <div style={{ fontFamily:F.mono, fontSize:11, color:C.grayLight, lineHeight:1.5, marginBottom:10 }}>
-        Saves a JSON file (everything: profile, meals, weights, workouts, PRs, measurements, photos) to your phone's Downloads folder. Save it to Drive/Files for off-device safety.
+        Saves a JSON file (everything: profile, meals, weights, workouts, PRs, measurements, photos) to your phone{"'"} Downloads folder. Save it to Drive/Files for off-device safety.
       </div>
 
       {/* Snapshots toggle */}
@@ -7562,22 +6946,8 @@ function NowVsGoalSection({ data }) {
 // ── Vision Board (added to GAINS Tab) ─────────────────────────────
 function VisionBoard({ data }) {
   const currentW = [...data.weightLog].filter(w=>w.weight).pop()?.weight || 175.8;
-  const goalW = 190; // midpoint of 185-195
-  const startW = 175.8;
-  const weightProgress = Math.max(0, Math.min(1, (currentW - startW) / (goalW - startW)));
-
   const latestM = data.measurements?.length ? data.measurements[data.measurements.length-1] : null;
   const currentBF = latestM?.bodyFat || 16;
-  const goalBF = 9;
-  const bfProgress = Math.max(0, Math.min(1, (currentBF - goalBF) / (16 - goalBF)));
-
-  // Key lift progress toward Phase 4 targets
-  const liftTargets = [
-    { name:"Incline Bench", current:110, goal:180, pr:data.prs.find(p=>p.exercise.includes("Incline"))?.weight||110 },
-    { name:"Squat", current:205, goal:315, pr:data.prs.find(p=>p.exercise.includes("Squat"))?.weight||205 },
-    { name:"RDL", current:315, goal:425, pr:data.prs.find(p=>p.exercise.includes("RDL"))?.weight||315 },
-    { name:"Shoulder Press", current:55, goal:100, pr:data.prs.find(p=>p.exercise.includes("Shoulder"))?.weight||55 },
-  ];
 
   // Milestone definitions for silhouette fill
   const milestones = [
@@ -7986,7 +7356,7 @@ function PhotoViewerModal({ photo, type, onClose, onDelete, onUpdate }) {
               <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:10, padding:12, marginBottom:12 }}>
                 {photo.caption && (
                   <div style={{ fontFamily:F.body, fontSize:13, color:C.white, marginBottom:8, lineHeight:1.4 }}>
-                    "{photo.caption}"
+                    &quot;{photo.caption}&quot;
                   </div>
                 )}
                 <div style={{ display:"flex", gap:14, flexWrap:"wrap" }}>
@@ -8086,7 +7456,7 @@ function TodayView({ todayMeals, calTarget, protTarget, carbTarget, fatTarget, m
     <div>
       {/* Macro summary */}
       <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:16, padding:18, marginBottom:12 }}>
-        <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:14 }}>TODAY'S MACROS</div>
+        <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:14 }}>TODAY{"'"} MACROS</div>
         <MacroRow label="KCAL"    val={todayMeals.calories} target={calTarget}  color={C.lime}   unit="kcal" />
         <MacroRow label="PROTEIN" val={todayMeals.protein}  target={protTarget} color={C.teal}   />
         <MacroRow label="CARBS"   val={todayMeals.carbs}    target={carbTarget} color={C.orange} />
@@ -8714,7 +8084,7 @@ function FuelTab({ data, updateData, onLogMeal }) {
 }
 
 // ── ProfileTab (V2.2 Chunk A — nested sub-tabs: OVERVIEW / PLAN / STATS) ──
-function ProfileTab({ data, updateData, onLogMeasurements, onLogMeal, onLogPR, onEditDay, onOpenSettings }) {
+function ProfileTab({ data, _updateData, onLogMeasurements, onLogMeal, onLogPR, onEditDay, onOpenSettings }) {
   const [subTab, setSubTab] = React.useState("overview");
   const subTabs = [
     { id:"overview", label:"OVERVIEW" },
