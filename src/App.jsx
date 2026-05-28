@@ -35,18 +35,38 @@ function aiHeaders() {
   };
 }
 
+// Sanitize free-text user input before injecting into AI system prompts.
+// Prevents prompt injection via weekly check-in notes and other free-text fields.
+function sanitizePromptInput(str) {
+  if (!str || typeof str !== "string") return "";
+  return str
+    .replace(/\n+/g, " ")            // collapse newlines — each line could be a new instruction
+    .replace(/```/g, "")              // remove code fences
+    .replace(/System:/gi, "")         // remove role-injection attempts
+    .replace(/Human:/gi, "")
+    .replace(/Assistant:/gi, "")
+    .replace(/Ignore previous/gi, "[filtered]")
+    .trim()
+    .slice(0, 500);                   // hard cap at 500 chars
+}
+
 
 // ── Error Boundary ────────────────────────────────────────────────
 export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, resetKey: 0 };
   }
   static getDerivedStateFromError(error) {
     return { hasError: true, error };
   }
   componentDidCatch(error, info) {
     console.error("DIALLED IN crash:", error, info);
+  }
+  handleReset() {
+    // Increment resetKey to force full unmount+remount of children — simple setState(false)
+    // re-renders the same crashed tree and crashes again immediately.
+    this.setState(s => ({ hasError: false, error: null, resetKey: s.resetKey + 1 }));
   }
   render() {
     if (this.state.hasError) {
@@ -63,7 +83,7 @@ export class ErrorBoundary extends React.Component {
             {this.state.error?.message || "An unexpected error occurred"}
           </div>
           <button
-            onClick={() => this.setState({ hasError: false, error: null })}
+            onClick={() => this.handleReset()}
             style={{
               marginTop: 8, padding: "12px 24px", borderRadius: 12,
               background: "#c6f135", color: "#0a0a0a",
@@ -73,7 +93,15 @@ export class ErrorBoundary extends React.Component {
             Try Again
           </button>
           <button
-            onClick={() => { localStorage.clear(); window.location.reload(); }}
+            onClick={async () => {
+              try {
+                const keys = await window.storage.list();
+                await Promise.all(keys.map(k => window.storage.delete(k)));
+              } catch(e) {
+                localStorage.clear();
+              }
+              window.location.reload();
+            }}
             style={{
               padding: "10px 20px", borderRadius: 12, background: "transparent",
               color: "#666", border: "1px solid #333", fontSize: 13, cursor: "pointer"
@@ -84,7 +112,11 @@ export class ErrorBoundary extends React.Component {
         </div>
       );
     }
-    return this.props.children;
+    return (
+      <React.Fragment key={this.state.resetKey}>
+        {this.props.children}
+      </React.Fragment>
+    );
   }
 }
 
@@ -226,7 +258,7 @@ async function runMigrations() {
           entries: [legacyEntry],
         };
       }
-      await sSet("meals", migrated);
+      await window.storage.set("ft:meals", JSON.stringify(migrated));
       succeeded = true;
     } catch (e) {
       console.warn("Meal migration failed, will retry:", e);
@@ -337,13 +369,13 @@ async function restoreFromSnapshot(date) {
   const snap = await getSnapshot(date);
   if (!snap || !snap.data) throw new Error("Snapshot not found");
   const { data } = snap;
-  // Best-effort write of all keys
-  await sSet("profile", data.profile);
-  await sSet("weightLog", data.weightLog);
-  await sSet("prs", data.prs);
-  await sSet("workouts", data.workouts);
-  await sSet("meals", data.meals);
-  await sSet("measurements", data.measurements);
+  // Best-effort write of all keys — use ft: prefix so sGet can read them back
+  await window.storage.set("ft:profile", JSON.stringify(data.profile));
+  await window.storage.set("ft:weightLog", JSON.stringify(data.weightLog));
+  await window.storage.set("ft:prs", JSON.stringify(data.prs));
+  await window.storage.set("ft:workouts", JSON.stringify(data.workouts));
+  await window.storage.set("ft:meals", JSON.stringify(data.meals));
+  await window.storage.set("ft:measurements", JSON.stringify(data.measurements));
   return true;
 }
 
@@ -452,7 +484,14 @@ async function pushBackupToGit() {
   // GET to retrieve the file's current sha (required to update existing file)
   let sha = null;
   try {
-    const get = await fetch(url, { headers });
+    const getCtrl = new AbortController();
+    const getTimeout = setTimeout(() => getCtrl.abort(), 30000);
+    let get;
+    try {
+      get = await fetch(url, { headers, signal: getCtrl.signal });
+    } finally {
+      clearTimeout(getTimeout);
+    }
     if (get.ok) {
       const j = await get.json();
       if (j && j.sha) sha = j.sha;
@@ -472,7 +511,14 @@ async function pushBackupToGit() {
     ...(sha ? { sha } : {}),
   };
 
-  const put = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
+  const putCtrl = new AbortController();
+  const putTimeout = setTimeout(() => putCtrl.abort(), 30000);
+  let put;
+  try {
+    put = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body), signal: putCtrl.signal });
+  } finally {
+    clearTimeout(putTimeout);
+  }
   if (!put.ok) {
     const errText = await put.text().catch(() => "");
     throw new Error(`PUT ${put.status}: ${(errText || put.statusText || "").slice(0, 200)}`);
@@ -914,6 +960,9 @@ function inferMealSlot(text, dt) {
 // ── Constants ─────────────────────────────────────────────────────
 const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const SPLIT_MAP = { Mon:"Upper A", Tue:"Lower A", Thu:"Upper B", Fri:"Lower B" };
+
+// RIR string → numeric map. easy=~3 reps in reserve, good=~2, hard=~1, fail=0
+const RIR_NUMERIC = { easy: 3, good: 2, hard: 1, fail: 0 };
 
 const C = {
   bg:"#070709", surface:"#101014", surfaceAlt:"#0C0C10",
@@ -1450,10 +1499,11 @@ function FInput({ label, value, onChange, placeholder, type, color }) {
   );
 }
 
-function SaveBtn({ onClick, label }) {
+function SaveBtn({ onClick, label, disabled = false }) {
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       style={{
         width: "100%",
         background: C.lime,
@@ -1463,9 +1513,11 @@ function SaveBtn({ onClick, label }) {
         fontFamily: F.display,
         fontSize: 20,
         color: C.dark,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
         letterSpacing: 1,
         marginTop: 4,
+        opacity: disabled ? 0.4 : 1,
+        touchAction: "manipulation",
       }}
     >
       {label || "SAVE"}
@@ -1548,6 +1600,7 @@ function WeightModal({ data, updateData, onClose }) {
                   color: readiness === opt.v ? "#c6f135" : "#666",
                   fontSize:18, cursor:"pointer", display:"flex",
                   flexDirection:"column", alignItems:"center", gap:2,
+                  touchAction: "manipulation",
                 }}
               >
                 <span>{opt.emoji}</span>
@@ -1571,6 +1624,7 @@ function WeightModal({ data, updateData, onClose }) {
                   background: soreness === opt.toLowerCase() ? "#001133" : "#111",
                   color: soreness === opt.toLowerCase() ? "#4488FF" : "#666",
                   fontSize:11, cursor:"pointer", fontFamily:"monospace",
+                  touchAction: "manipulation",
                 }}
               >
                 {opt}
@@ -2987,15 +3041,17 @@ function BackupNagBanner() {
 function QuadrantRings({ pillars, composite, color, onRingTap }) {
   const [anim, setAnim] = useState(0);
   useEffect(() => {
+    let rafId;
     const start = performance.now();
     const duration = 700;
     function frame(now) {
       const t = Math.min(1, (now - start) / duration);
       // ease-out cubic
       setAnim(1 - Math.pow(1 - t, 3));
-      if (t < 1) requestAnimationFrame(frame);
+      if (t < 1) rafId = requestAnimationFrame(frame);
     }
-    requestAnimationFrame(frame);
+    rafId = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(rafId); // cleanup on unmount
   }, []);
 
   const rings = [
@@ -3345,7 +3401,7 @@ function WeeklyCheckinModal({ data, updateData, onClose }) {
                 borderColor: weightTrend===o.v?"#c6f135":"#333",
                 background: weightTrend===o.v?"#1a2200":"#111",
                 color: weightTrend===o.v?"#c6f135":"#666",
-                fontSize:12, cursor:"pointer" }}>
+                fontSize:12, cursor:"pointer", touchAction:"manipulation" }}>
               {o.l}
             </button>
           ))}
@@ -3362,7 +3418,8 @@ function WeeklyCheckinModal({ data, updateData, onClose }) {
                 borderColor: sessionsHit===n?"#9D7FFF":"#333",
                 background: sessionsHit===n?"#0d0022":"#111",
                 color: sessionsHit===n?"#9D7FFF":"#666",
-                fontSize:13, cursor:"pointer", fontWeight: sessionsHit===n?700:400 }}>
+                fontSize:13, cursor:"pointer", fontWeight: sessionsHit===n?700:400,
+                touchAction:"manipulation" }}>
               {n}
             </button>
           ))}
@@ -3379,7 +3436,8 @@ function WeeklyCheckinModal({ data, updateData, onClose }) {
                 borderColor: proteinDays===n?"#FFB800":"#333",
                 background: proteinDays===n?"#1a1200":"#111",
                 color: proteinDays===n?"#FFB800":"#666",
-                fontSize:13, cursor:"pointer", fontWeight: proteinDays===n?700:400 }}>
+                fontSize:13, cursor:"pointer", fontWeight: proteinDays===n?700:400,
+                touchAction:"manipulation" }}>
               {n}
             </button>
           ))}
@@ -3669,7 +3727,13 @@ function getAvgRIRForExercise(data, exerciseName, lookback = 3) {
   const rirValues = recent.flatMap(w =>
     (w.exercises || [])
       .filter(e => e.name && e.name.toLowerCase().includes(exerciseName.toLowerCase().slice(0, 10)))
-      .flatMap(e => (e.sets || []).map(s => s.rir).filter(r => r !== null && r !== undefined))
+      .flatMap(e => (e.sets || []).map(s => {
+        const raw = s.rir;
+        if (raw === null || raw === undefined) return null;
+        // Handle both legacy numeric and new string formats (easy/good/hard/fail)
+        if (typeof raw === "number") return raw;
+        return RIR_NUMERIC[raw] ?? null;
+      }).filter(r => r !== null))
   );
 
   if (rirValues.length === 0) return null;
@@ -6216,7 +6280,7 @@ function buildCoachContextExtended(data) {
     ctx += `- Weight trend: ${lastCheckin.weightTrend || "not reported"}\n`;
     ctx += `- Sessions completed: ${lastCheckin.sessionsHit ?? "?"}/7\n`;
     ctx += `- Protein days hit: ${lastCheckin.proteinDays ?? "?"}/7\n`;
-    if (lastCheckin.note) ctx += `- Athlete note: "${lastCheckin.note}"\n`;
+    if (lastCheckin.note) ctx += `- Athlete note: "${sanitizePromptInput(lastCheckin.note)}"\n`;
   }
 
   // Today's readiness + soreness
@@ -6228,15 +6292,20 @@ function buildCoachContextExtended(data) {
     ctx += `\n`;
   }
 
-  // RIR trend across last 3 workouts
+  // RIR trend across last 3 workouts — convert string RIR to numeric before averaging
   const recentWorkouts = (data.workouts || []).slice(0, 3);
   const allRIRs = recentWorkouts.flatMap(w =>
-    (w.exercises || []).flatMap(e => (e.sets || []).map(s => s.rir).filter(r => r != null))
+    (w.exercises || []).flatMap(e => (e.sets || []).map(s => {
+      const raw = s.rir;
+      if (raw === null || raw === undefined) return null;
+      if (typeof raw === "number") return raw;
+      return RIR_NUMERIC[raw] ?? null;
+    }).filter(r => r !== null))
   );
   if (allRIRs.length > 0) {
     const avgRIR = (allRIRs.reduce((a,b) => a+b, 0) / allRIRs.length).toFixed(1);
-    ctx += `\nRECENT EFFORT (avg RIR across last 3 sessions): ${avgRIR} — `;
-    ctx += parseFloat(avgRIR) > 2.5
+    ctx += `\nRECENT EFFORT (avg RIR across last 3 sessions, 0-3 scale): ${avgRIR} — `;
+    ctx += parseFloat(avgRIR) > 2
       ? "athlete is leaving significant reps in reserve, could push harder.\n"
       : parseFloat(avgRIR) < 0.5
       ? "athlete is grinding close to failure consistently — monitor recovery.\n"
@@ -6389,8 +6458,9 @@ function NextSessionPrescriptions({ data }) {
             {(() => {
               const avgRIR = getAvgRIRForExercise(data, ex.name);
               if (avgRIR === null) return null;
-              const rirColor = avgRIR > 2.5 ? "#FFB800" : avgRIR < 0.5 ? "#ff4444" : C.teal;
-              const rirText = avgRIR > 2.5
+              // RIR is on 0-3 scale: easy=3, good=2, hard=1, fail=0
+              const rirColor = avgRIR > 2 ? "#FFB800" : avgRIR < 0.5 ? "#ff4444" : C.teal;
+              const rirText = avgRIR > 2
                 ? `Avg RIR ${avgRIR.toFixed(1)} — leaving reps in tank. Push closer to failure (target RIR 1-2).`
                 : avgRIR < 0.5
                 ? `Avg RIR ${avgRIR.toFixed(1)} — grinding hard. Consider a deload set or +5 lbs next session.`
@@ -8117,13 +8187,14 @@ function TodayView({ todayMeals, calTarget, protTarget, carbTarget, fatTarget, m
                     )}
                   </div>
                   <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                    {typeof item === "object" && (
-                      <button onClick={() => setEditingItem({ date:t, idx:i, item })}
+                    {typeof item === "object" && item.id && (
+                      <button onClick={() => setEditingItem({ date:t, entryId:item.id, item })}
                         style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.gray }}>
                         ✏️
                       </button>
                     )}
-                    <button onClick={() => deleteMealItem(t, item.id || String(i))}
+                    {/* Delete: use stable entry.id; index fallback only for legacy string items */}
+                    <button onClick={() => item.id ? deleteMealItem(t, item.id) : deleteMealItem(t, String(i))}
                       style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.orange }}>
                       🗑
                     </button>
@@ -8317,11 +8388,11 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
                                 )}
                               </div>
                               <div style={{ display:"flex", gap:4, flexShrink:0 }}>
-                                {typeof item === "object" && (
-                                  <button onClick={() => setEditingItem({ date, idx:i, item })}
+                                {typeof item === "object" && item.id && (
+                                  <button onClick={() => setEditingItem({ date, entryId:item.id, item })}
                                     style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.gray }}>✏️</button>
                                 )}
-                                <button onClick={() => deleteMealItem(date, item.id || String(i))}
+                                <button onClick={() => item.id ? deleteMealItem(date, item.id) : deleteMealItem(date, String(i))}
                                   style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.orange }}>🗑</button>
                               </div>
                             </div>
@@ -8459,6 +8530,42 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
 }
 
 
+// ── ItemEditSheet — hoisted out of FuelTab to prevent re-mount on every render ──
+// Must be top-level so React can reconcile it across FuelTab re-renders.
+function ItemEditSheet({ editingItem, onClose, onSave }) {
+  const orig = editingItem.item;
+  const [kcal, setKcal] = useState(String(Math.round(orig.calories||0)));
+  const [prot, setProt] = useState(String(Math.round(orig.protein||0)));
+  const [carb, setCarb] = useState(String(Math.round(orig.carbs||0)));
+  const [fat,  setFat]  = useState(String(Math.round(orig.fat||0)));
+  const inputStyle = { background:"#1A1A22", border:"1px solid "+C.border, borderRadius:8, padding:"10px 12px", fontFamily:F.mono, fontSize:15, color:C.white, width:"100%", boxSizing:"border-box", outline:"none", textAlign:"right" };
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:600, display:"flex", flexDirection:"column" }}>
+      <div onClick={onClose} style={{ flex:1, background:"rgba(0,0,0,0.72)" }} />
+      <div style={{ background:C.bg, borderTop:"2px solid "+C.border, borderRadius:"18px 18px 0 0", padding:"18px 16px 30px", maxWidth:480, width:"100%", margin:"0 auto" }}>
+        <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>EDIT MEAL ITEM</div>
+        <div style={{ fontSize:14, color:C.white, marginBottom:16, fontWeight:500 }}>{orig.description || orig.name || "Meal"}</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+          {[["KCAL", kcal, setKcal], ["PROTEIN g", prot, setProt], ["CARBS g", carb, setCarb], ["FAT g", fat, setFat]].map(function(row) {
+            return (
+              <div key={row[0]}>
+                <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1, marginBottom:5 }}>{row[0]}</div>
+                <input type="number" value={row[1]} onChange={function(e) { row[2](e.target.value); }}
+                  style={inputStyle} />
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"12px", background:C.surface, border:"1px solid "+C.border, borderRadius:10, fontFamily:F.mono, fontSize:12, color:C.gray, cursor:"pointer" }}>CANCEL</button>
+          <button onClick={() => onSave(editingItem.date, editingItem.entryId, { calories:parseFloat(kcal)||0, protein:parseFloat(prot)||0, carbs:parseFloat(carb)||0, fat:parseFloat(fat)||0 })}
+            style={{ flex:2, padding:"12px", background:C.lime, border:"none", borderRadius:10, fontFamily:F.mono, fontSize:12, color:C.dark, cursor:"pointer", fontWeight:700, letterSpacing:1 }}>SAVE</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── FuelTab (V2.2 Chunk B — full nutrition hub) ─────────────────────────────
 function FuelTab({ data, updateData, onLogMeal }) {
   const [view, setView]               = useState("today");   // "today" | "history"
@@ -8507,14 +8614,22 @@ function FuelTab({ data, updateData, onLogMeal }) {
     await updateData("meals", { ...data.meals, [date]: updated });
   }
 
-  async function saveItemEdit(date, idx, patch) {
-    const day   = data.meals[date] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
-    const items = (day.items || []).map((it, i) => i === idx ? { ...it, ...patch } : it);
-    const tot   = items.reduce((s, it) => typeof it === "object"
-      ? { calories: s.calories+(it.calories||0), protein: s.protein+(it.protein||0),
-          carbs: s.carbs+(it.carbs||0), fat: s.fat+(it.fat||0) }
-      : s, { calories:0, protein:0, carbs:0, fat:0 });
-    await updateData("meals", { ...data.meals, [date]: { ...day, ...tot, items } });
+  async function saveItemEdit(date, entryId, patch) {
+    const day = data.meals[date] || { calories:0, protein:0, carbs:0, fat:0, entries:[] };
+    const entries = day.entries || [];
+    const entryIdx = entries.findIndex(e => e.id === entryId);
+    if (entryIdx === -1) { setEditingItem(null); return; } // entry not found, bail
+    const updatedEntries = entries.map((e, i) =>
+      i === entryIdx ? { ...e, ...patch } : e
+    );
+    // Recompute day-level totals from entries
+    const tot = updatedEntries.reduce((s, e) => ({
+      calories: s.calories + (e.calories || 0),
+      protein:  s.protein  + (e.protein  || 0),
+      carbs:    s.carbs    + (e.carbs    || 0),
+      fat:      s.fat      + (e.fat      || 0),
+    }), { calories:0, protein:0, carbs:0, fat:0 });
+    await updateData("meals", { ...data.meals, [date]: { ...day, ...tot, entries: updatedEntries } });
     setEditingItem(null);
   }
 
@@ -8526,40 +8641,7 @@ function FuelTab({ data, updateData, onLogMeal }) {
     });
   }
 
-  // ── inline item edit sheet ────────────────────────────────────────
-  function ItemEditSheet() {
-    const orig = editingItem.item;
-    const [kcal, setKcal] = useState(String(Math.round(orig.calories||0)));
-    const [prot, setProt] = useState(String(Math.round(orig.protein||0)));
-    const [carb, setCarb] = useState(String(Math.round(orig.carbs||0)));
-    const [fat,  setFat]  = useState(String(Math.round(orig.fat||0)));
-    const inputStyle = { background:"#1A1A22", border:"1px solid "+C.border, borderRadius:8, padding:"10px 12px", fontFamily:F.mono, fontSize:15, color:C.white, width:"100%", boxSizing:"border-box", outline:"none", textAlign:"right" };
-    return (
-      <div style={{ position:"fixed", inset:0, zIndex:600, display:"flex", flexDirection:"column" }}>
-        <div onClick={() => setEditingItem(null)} style={{ flex:1, background:"rgba(0,0,0,0.72)" }} />
-        <div style={{ background:C.bg, borderTop:"2px solid "+C.border, borderRadius:"18px 18px 0 0", padding:"18px 16px 30px", maxWidth:480, width:"100%", margin:"0 auto" }}>
-          <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>EDIT MEAL ITEM</div>
-          <div style={{ fontSize:14, color:C.white, marginBottom:16, fontWeight:500 }}>{orig.name || "Meal"}</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
-            {[["KCAL", kcal, setKcal], ["PROTEIN g", prot, setProt], ["CARBS g", carb, setCarb], ["FAT g", fat, setFat]].map(function(row) {
-              return (
-                <div key={row[0]}>
-                  <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1, marginBottom:5 }}>{row[0]}</div>
-                  <input type="number" value={row[1]} onChange={function(e) { row[2](e.target.value); }}
-                    style={inputStyle} />
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={() => setEditingItem(null)} style={{ flex:1, padding:"12px", background:C.surface, border:"1px solid "+C.border, borderRadius:10, fontFamily:F.mono, fontSize:12, color:C.gray, cursor:"pointer" }}>CANCEL</button>
-            <button onClick={() => saveItemEdit(editingItem.date, editingItem.idx, { calories:parseFloat(kcal)||0, protein:parseFloat(prot)||0, carbs:parseFloat(carb)||0, fat:parseFloat(fat)||0 })}
-              style={{ flex:2, padding:"12px", background:C.lime, border:"none", borderRadius:10, fontFamily:F.mono, fontSize:12, color:C.dark, cursor:"pointer", fontWeight:700, letterSpacing:1 }}>SAVE</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ItemEditSheet is defined as a top-level component above FuelTab
 
   // ── render ────────────────────────────────────────────────────────
   return (
@@ -8616,7 +8698,7 @@ function FuelTab({ data, updateData, onLogMeal }) {
         deleteMealItem={deleteMealItem}
         setEditingItem={setEditingItem}
       />}
-      {editingItem && <ItemEditSheet />}
+      {editingItem && <ItemEditSheet editingItem={editingItem} onClose={() => setEditingItem(null)} onSave={saveItemEdit} />}
     </div>
   );
 }
