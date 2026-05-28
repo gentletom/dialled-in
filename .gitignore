@@ -7,3 +7,4 @@ dist-ssr
 *backup*.json
 *export*.json
 .cowork/
+coverage/
