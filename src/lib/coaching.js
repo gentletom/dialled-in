@@ -40,7 +40,8 @@ export function getPrescription(exerciseName, workoutHistory, exerciseDef) {
     if (match) {
       lastDate = session.date;
       // Parse sets string like "275×12, 295×10, 315×10" or just weight/reps
-      if (match.sets) {
+      // Guard: sets may be an array of {rir} objects in newer log entries — skip those
+      if (match.sets && typeof match.sets === "string") {
         const setMatches = [...match.sets.matchAll(/(\d+\.?\d*)×(\d+)/g)];
         if (setMatches.length > 0) {
           // Use the working sets (middle/last ones, not warmups)

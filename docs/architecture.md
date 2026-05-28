@@ -1,7 +1,7 @@
 # DIALLED IN — Architecture
 
 **Version:** 2.2.0  
-**Last updated:** 2026-05-28
+**Last updated:** 2026-05-28 (post-engineering-excellence pass)
 
 ---
 
@@ -41,7 +41,7 @@
                          ▼
               ┌─────────────────────┐
               │  api.anthropic.com  │
-              │  (Claude claude-opus-4-5)  │
+              │  (Claude claude-opus-4-5)      │
               └─────────────────────┘
 
                          │
@@ -57,47 +57,74 @@
 
 ---
 
+## Module Structure
+
+`App.jsx` was refactored from a ~8,378-line monolith into a 10-module architecture. The root shell is now 415 lines; all domain logic lives in dedicated modules.
+
+```
+src/
+├── App.jsx              # Root shell (~415 lines) — state, routing, updateData closure
+├── constants.js         # Colours (C), fonts (F), DAYS, SPLIT_MAP, WORKOUTS, PHASES, PILLAR_INFO
+├── utils.js             # Pure utilities — getToday(), toLocalDateStr(), calc1RM()
+├── main.jsx             # ReactDOM entry point
+├── storage.js           # window.storage shim — IndexedDB adapter installed as side-effect
+├── lib/
+│   ├── scoring.js       # Pillar scoring engine (computePillar*, computeTodayScore)
+│   ├── coaching.js      # AI prompt builders (buildCoachContextExtended, getPrescription)
+│   ├── nutrition.js     # Meal context + macro prompt builders
+│   └── storage.js       # IndexedDB adapter, git backup, snapshot restore
+└── components/
+    ├── ErrorBoundary.jsx
+    ├── HomeTab.jsx
+    ├── FuelTab.jsx       # Recharts charts — lazy-loaded via React.lazy in App.jsx
+    ├── LiftsTab.jsx
+    ├── ProfileTab.jsx
+    ├── CoachDrawer.jsx
+    ├── MealModal.jsx
+    ├── WeightModal.jsx
+    ├── WeeklyCheckinModal.jsx
+    ├── QuadrantRings.jsx    # memo() — skips re-render if rings data unchanged
+    ├── ScoreTrendChart.jsx  # memo()
+    ├── PillarInfoDrawer.jsx # memo()
+    └── shared/
+        ├── Sheet.jsx
+        ├── FInput.jsx
+        └── SaveBtn.jsx
+```
+
 ## Component Hierarchy
 
-The app is deliberately single-file (`src/App.jsx`). Components are defined as named functions within that file and composed top-down. The major sections:
+`App.jsx` is the root shell. It owns all state and the `updateData` closure; tabs receive slices via props.
 
 ```
 <App>
   └── <BottomNav>                  — five-tab bar + Brain FAB
   └── <CoachDrawer>                — slide-up overlay, lazy-mounts chat
   └── <SettingsDrawer>             — slide-up overlay, API key + backup config
-  └── <PillarInfoDrawer>           — tap ring → pillar detail
+  └── <PillarInfoDrawer memo()>    — tap ring → pillar detail
   │
-  ├── HOME tab
-  │   ├── <MorningCard>            — greeting + daily intention
+  ├── HOME tab        (HomeTab.jsx)
   │   ├── <TodayScoreCard>         — composite headline + 4 rings
   │   └── <AdaptiveNudges>         — data-driven prompt list
   │
   ├── SCORE tab
-  │   ├── <QuadrantRings>          — hero 4-ring radial (0-100 scale)
-  │   ├── <ScoreBarChart>          — 7-day trend bar chart
+  │   ├── <QuadrantRings memo()>   — hero 4-ring radial (0-100 scale)
+  │   ├── <ScoreTrendChart memo()> — 7-day trend bar chart
   │   └── <PillarBreakdown>        — per-pillar detail rows
   │
-  ├── FUEL tab
+  ├── FUEL tab        (FuelTab.jsx — lazy-loaded via React.lazy)
   │   ├── <MacroBars>              — protein/carbs/fat vs target
   │   ├── <MealList>               — today's meals
   │   ├── <MealModal>              — add/edit meal (+ AI micro estimation)
-  │   ├── <MicroSection>           — expandable micronutrient rows
-  │   └── <FuelHistory>            — 7d/30d bar chart + macros/micros tabs
+  │   └── <FuelHistory>            — 7d/30d Recharts bar chart + macros/micros tabs
   │
-  ├── LIFTS tab
+  ├── LIFTS tab       (LiftsTab.jsx)
   │   ├── <WorkoutPicker>          — Quick / Template / Custom
   │   ├── <ActiveSession>          — live set logger + rest timer
-  │   ├── <RoutineBuilder>         — create/edit templates
-  │   ├── <ExercisePicker>         — catalogue with muscle filter + search
-  │   └── <PlateCalculator>        — barbell plate breakdown
+  │   └── <ExercisePicker>         — catalogue with muscle filter + search
   │
-  ├── GAINS tab
-  │   ├── <WeightLog>              — bodyweight history + 7d MA chart
-  │   └── <PRTracker>              — per-exercise PR list + sparklines
-  │
-  └── PLAN tab
-      └── <WeeklyPlan>             — editable 7-day training template
+  └── PROFILE tab     (ProfileTab.jsx)
+      └── targets, backup config, measurements
 ```
 
 ---
@@ -273,7 +300,7 @@ GitHub Actions (.github/workflows/deploy.yml)
     ├── actions/checkout@v4
     ├── actions/setup-node@v4  (Node 20, npm cache)
     ├── npm ci --legacy-peer-deps
-    ├── npm run lint            (warn-only while codebase catches up)
+    ├── npm run lint            (--max-warnings 0 — hard gate, blocks deploy on any warning)
     ├── npm run build           (Vite → dist/)
     ├── Report bundle sizes     (logged to Actions summary)
     ├── actions/configure-pages@v5
@@ -297,15 +324,14 @@ Build output (Vite manual chunks):
 
 ## Known Limitations
 
-1. **Single-file App.jsx** (~15 000 lines) — all component logic is co-located. This is intentional for now but is the primary source of editor slowness and merge complexity.
-2. **No test suite** — zero automated tests. All verification is manual on-device.
-3. **Sleep data is manual** — no wearable integration yet; RECOVERY pillar defaults to 50 without input.
-4. **Steps are manual or estimated** — no Health/Fit API integration yet.
-5. **IndexedDB is browser-local** — no cross-device sync beyond the git backup.
+1. **Sleep data is manual** — no wearable integration yet; RECOVERY pillar defaults to 50 without input.
+2. **Steps are manual or estimated** — no Health/Fit API integration yet.
+3. **IndexedDB is browser-local** — no cross-device sync beyond the git backup.
+4. **`storage.js` and `nutrition.js` have no unit tests** — they require IndexedDB and live AI API calls respectively. Coverage thresholds are set conservatively until mocks are added.
 
 ## Roadmap Notes
 
-- Modularise App.jsx into domain folders (`/fuel`, `/lifts`, `/score`, etc.)
-- Add Vitest unit tests for scoring formulas and storage adapter
 - Wearable integration (Apple Health via Shortcuts, Google Fit API)
 - Cross-device sync via a lightweight serverless function + encrypted blob
+- Unit tests for `storage.js` (via fake-indexeddb) and `nutrition.js` (with AI mocks) — will unlock 75%+ coverage threshold
+- Raise coverage thresholds to lines:75, functions:80, statements:75 once above mocks land

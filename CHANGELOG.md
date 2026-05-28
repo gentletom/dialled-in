@@ -5,6 +5,23 @@ All notable changes to DIALLED IN are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [Unreleased] — Engineering Excellence (2026-05-28)
+
+### Changed
+- **Monolith split:** `src/App.jsx` (8,378 lines) refactored into 10-module architecture — `src/constants.js`, `src/utils.js`, `src/lib/scoring.js`, `src/lib/coaching.js`, `src/lib/nutrition.js`, `src/lib/storage.js`, and 9 component files. `App.jsx` reduced to 415 lines (root shell only).
+- **Lazy-load Recharts:** FuelTab and its Recharts dependency are now loaded on-demand (not on initial paint). Initial bundle reduced from 280 KB to 262 KB. Recharts (533 KB) deferred to first FUEL tab tap.
+- **`React.memo` on pure components:** `QuadrantRings`, `ScoreTrendChart`, and `PillarInfoDrawer` wrapped with `memo()` — skip re-render unless their specific props change.
+- **ESLint hard gate:** `--max-warnings 0` enforced, CI lint step now blocks deploy on any warning. 0 warnings maintained.
+- **Bundle warning resolved:** `chunkSizeWarningLimit` raised to 600 kB — Recharts (533 kB) is behind a lazy boundary and not on the critical path; the default 500 kB limit was a false positive.
+
+### Added
+- **Vitest test suite:** 170 unit tests across `src/lib/scoring.js`, `src/lib/coaching.js`, and `src/utils.js`. Test step added to CI before build — test failure independently blocks deploy.
+- **Coverage thresholds:** Enforced in Vitest config — CI fails if line/function/statement/branch coverage drops below baseline. Target raised to 75/80/75 once `storage.js`/`nutrition.js` have IndexedDB/AI mocks.
+- **`getPrescription` defensive guard:** Added `typeof match.sets === "string"` check so the prescription engine skips array-of-RIR-objects set shapes without crashing — fixes a latent runtime error if a workout with the newer set format was passed to the AI context builder.
+- Professional dev infrastructure: `README.md`, `CHANGELOG.md`, `docs/architecture.md`, `docs/development.md`, `.eslintrc.cjs`/`eslint.config.js`, `.prettierrc`, GitHub PR template, issue templates.
+
+---
+
 
 ## [2.2.0] — 2026-05-28
 
