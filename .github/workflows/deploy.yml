@@ -23,8 +23,16 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - run: npm ci --legacy-peer-deps
+      - name: Lint
+        run: npm run lint || true   # warn-only for now, remove || true once lint is clean
       - run: npm run build
+      - name: Report bundle size
+        run: |
+          echo "=== Bundle sizes ==="
+          ls -lh dist/assets/*.js | awk '{print $5, $9}'
+          TOTAL=$(du -sh dist/ | cut -f1)
+          echo "Total dist: $TOTAL"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
