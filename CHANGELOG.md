@@ -8,6 +8,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [2.2.0] — 2026-05-28
 
+### Chunk H — Release Audit Fixes
+**Commits:** `d756987`
+
+#### Fixed
+- `restoreFromSnapshot` — all six `sSet` calls now write to `ft:`-prefixed keys (data was silently written to unreachable keys, making restore a no-op)
+- `runMigrations` v2→v3 — meal migration now writes to `ft:meals` (was bare `meals` key — migration data was lost)
+- RIR NaN fixed — `RIR_NUMERIC = { easy:3, good:2, hard:1, fail:0 }` constant introduced; `getAvgRIRForExercise` and `buildCoachContextExtended` now convert string RIR values to numbers before averaging (all RIR-based coaching output was silently NaN before this fix)
+- `ErrorBoundary` "Try Again" — uses `React.Fragment key={resetKey}` to force child subtree remount (previously re-crashed immediately); "Reset App" now clears IndexedDB via `window.storage.list()`
+- `QuadrantRings` — `requestAnimationFrame` loop now returns `cancelAnimationFrame` cleanup to prevent memory leak on unmount
+- `saveItemEdit` — now operates on `entries[]` shape, finds entries by stable `entryId`, recomputes macro totals (was operating on legacy `items[]`, silently zeroing macros for all V2 meals)
+- Delete entries fallback — removes `String(i)` index-as-ID anti-pattern; legacy entries without `.id` use index-based deletion
+- `ItemEditSheet` hoisted to module scope (was defined inside `FuelTab` render body — React was unmounting it on every render)
+- `SaveBtn` now forwards `disabled` prop with `opacity: 0.4` / `cursor: not-allowed` visual feedback
+- User-provided free text (weekly check-in notes) sanitized before AI system prompt injection via `sanitizePromptInput()`
+- `pushBackupToGit` — both GET and PUT fetch calls now wrapped with AbortController + 30 s timeout
+- `touch-action: manipulation` applied to readiness emoji selector, soreness control, and check-in option buttons (eliminates iOS 300 ms click delay)
+
+---
+
+### Chunk G — Coaching Intelligence Layer
+**Commits:** `35e5046`
+
+#### Added
+- Subjective readiness (1–5 emoji scale) and muscle soreness logging in LOG TODAY modal — feeds prescription header and RECOV pillar
+- Weekly check-in modal (Sunday trigger) — weight trend, sessions hit, protein days, coach note; injected into AI coaching context
+- RIR → prescription feedback loop — `getAvgRIRForExercise` maps stored RIR values to per-exercise coaching advice in NextSessionPrescriptions and AI coach context
+- Protein consistency score on HOME — "X/7 days at ≥90% protein target", colour-coded lime/amber/red
+- QuadrantRings load animation — ease-out-cubic RAF over 700 ms, score labels count up with progress
+- `ErrorBoundary` at root — ⚠️ error screen with "Try Again" (remounts subtree via key pattern) and "Reset App" (clears IndexedDB + reloads)
+
+#### Fixed
+- App now boots to HOME tab instead of LIFTS
+- AbortController + 30 s timeout on all five Anthropic API fetch call sites
+- FuelTab delete (`deleteMealItem`) now operates on `entries[]` and recomputes day-level macro totals correctly
+
+---
+
 ### Chunk F — Full Audit: Entries Display, Storage, Perf, Arch, UX Polish
 **Commit:** `f480e40`
 

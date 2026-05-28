@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, ReferenceLine, ComposedChart } from "recharts";
 import { Dumbbell, Utensils, TrendingUp, User, Home, X, Plus, Zap, Map, Calendar, ChevronRight, Check, Settings, Brain } from "lucide-react";
 
@@ -7,24 +7,24 @@ async function sGet(key, fallback) {
   try {
     const r = await window.storage.get(key);
     return r ? JSON.parse(r.value) : fallback;
-  } catch {
+  } catch (_e) {
     return fallback;
   }
 }
 async function sSet(key, val) {
-  try { await window.storage.set(key, JSON.stringify(val)); } catch {}
+  try { await window.storage.set(key, JSON.stringify(val)); } catch (_e) { /* best-effort */ }
 }
 
 // ── Anthropic API key — entered on-device, stored locally, never in the repo ──
 const API_KEY_STORAGE = "ft:anthropicApiKey";
 function getApiKey() {
-  try { return localStorage.getItem(API_KEY_STORAGE) || ""; } catch { return ""; }
+  try { return localStorage.getItem(API_KEY_STORAGE) || ""; } catch (_e) { return ""; }
 }
 function setApiKey(k) {
   try {
     if (k && k.trim()) localStorage.setItem(API_KEY_STORAGE, k.trim());
     else localStorage.removeItem(API_KEY_STORAGE);
-  } catch {}
+  } catch (_e) { /* best-effort */ }
 }
 function aiHeaders() {
   return {
@@ -131,7 +131,7 @@ async function runMigrations() {
   try {
     const r = await window.storage.get("ft:dataVersion");
     if (r && r.value) version = parseInt(JSON.parse(r.value)) || 1;
-  } catch {}
+  } catch (_e) { /* best-effort */ }
 
   // v1 → v2: photos go from single-key to indexed multi-photo system
   if (version < 2) {
@@ -140,8 +140,8 @@ async function runMigrations() {
       // Read existing index (in case migration was partially run before)
       let progressIdx = [];
       let goalIdx = [];
-      try { progressIdx = JSON.parse((await window.storage.get("ft:photoProgressIndex")).value); } catch {}
-      try { goalIdx = JSON.parse((await window.storage.get("ft:photoGoalIndex")).value); } catch {}
+      try { progressIdx = JSON.parse((await window.storage.get("ft:photoProgressIndex")).value); } catch (_e) { /* best-effort */ }
+      try { goalIdx = JSON.parse((await window.storage.get("ft:photoGoalIndex")).value); } catch (_e) { /* best-effort */ }
 
       const existingProgressDates = new Set(progressIdx.map(p => p.date));
       const existingGoalIds = new Set(goalIdx.map(g => g.id));
@@ -159,7 +159,7 @@ async function runMigrations() {
           }));
           progressIdx.push({ id, date: h.date || getToday() });
         }
-      } catch {}
+      } catch (_e) { /* best-effort */ }
 
       // Migrate ft:photoCurrentLatest → most recent progress photo (if not already in history)
       try {
@@ -173,7 +173,7 @@ async function runMigrations() {
             progressIdx.push({ id, date: cur.date || getToday() });
           }
         }
-      } catch {}
+      } catch (_e) { /* best-effort */ }
 
       // Migrate ft:photoGoal → goal photo
       try {
@@ -185,7 +185,7 @@ async function runMigrations() {
           }));
           goalIdx.push({ id, date: goal.date || getToday() });
         }
-      } catch {}
+      } catch (_e) { /* best-effort */ }
 
       // Sort newest first
       progressIdx.sort((a, b) => (b.date||"").localeCompare(a.date||""));
@@ -206,7 +206,7 @@ async function runMigrations() {
 
     // Only stamp version on full success — failures retry
     if (migrationSucceeded) {
-      try { await window.storage.set("ft:dataVersion", JSON.stringify(2)); } catch {}
+      try { await window.storage.set("ft:dataVersion", JSON.stringify(2)); } catch (_e) { /* best-effort */ }
     }
   }
 
@@ -216,7 +216,7 @@ async function runMigrations() {
   try {
     const r = await window.storage.get("ft:dataVersion");
     if (r && r.value) v2 = parseInt(JSON.parse(r.value)) || 2;
-  } catch {}
+  } catch (_e) { /* best-effort */ }
 
   if (v2 < 3) {
     let succeeded = false;
@@ -264,11 +264,11 @@ async function runMigrations() {
       console.warn("Meal migration failed, will retry:", e);
     }
     if (succeeded) {
-      try { await window.storage.set("ft:dataVersion", JSON.stringify(CURRENT_DATA_VERSION)); } catch {}
+      try { await window.storage.set("ft:dataVersion", JSON.stringify(CURRENT_DATA_VERSION)); } catch (_e) { /* best-effort */ }
     }
   } else {
     // Already at current version
-    try { await window.storage.set("ft:dataVersion", JSON.stringify(CURRENT_DATA_VERSION)); } catch {}
+    try { await window.storage.set("ft:dataVersion", JSON.stringify(CURRENT_DATA_VERSION)); } catch (_e) { /* best-effort */ }
   }
 }
 
@@ -314,7 +314,7 @@ async function takeSnapshotIfNeeded() {
   try {
     const existing = await window.storage.get(snapKey);
     if (existing) return false;
-  } catch {} // doesn't exist, continue
+  } catch (_e) { /* best-effort */ } // doesn't exist, continue
 
   try {
     const snapshot = {
@@ -335,7 +335,7 @@ async function takeSnapshotIfNeeded() {
 
     // Update index
     let idx = [];
-    try { idx = JSON.parse((await window.storage.get("ft:snapshotIndex")).value); } catch {}
+    try { idx = JSON.parse((await window.storage.get("ft:snapshotIndex")).value); } catch (_e) { /* best-effort */ }
     idx = idx.filter(s => s.date !== today);
     idx.unshift({ date: today, ts: Date.now() });
     idx.sort((a, b) => b.date.localeCompare(a.date));
@@ -344,7 +344,7 @@ async function takeSnapshotIfNeeded() {
     const toRemove = idx.slice(SNAPSHOT_RETENTION_DAYS);
     idx = idx.slice(0, SNAPSHOT_RETENTION_DAYS);
     for (const old of toRemove) {
-      try { await window.storage.delete(`ft:snapshot:${old.date}`); } catch {}
+      try { await window.storage.delete(`ft:snapshot:${old.date}`); } catch (_e) { /* best-effort */ }
     }
 
     await window.storage.set("ft:snapshotIndex", JSON.stringify(idx));
@@ -389,14 +389,14 @@ async function generateFullBackup() {
     try {
       const r = await window.storage.get(`ft:photo:progress:${p.id}`);
       progressPhotos.push(JSON.parse(r.value));
-    } catch {}
+    } catch (_e) { /* best-effort */ }
   }
   const goalPhotos = [];
   for (const p of goalIdx) {
     try {
       const r = await window.storage.get(`ft:photo:goal:${p.id}`);
       goalPhotos.push(JSON.parse(r.value));
-    } catch {}
+    } catch (_e) { /* best-effort */ }
   }
 
   return {
@@ -438,7 +438,7 @@ function getGitBackupConfig() {
       lastAt: localStorage.getItem(GIT_BACKUP_LAST_KEY) || null,
       auto: localStorage.getItem(GIT_BACKUP_AUTO_KEY) === "1",
     };
-  } catch {
+  } catch (_e) {
     return { repo: "", token: "", lastAt: null, auto: false };
   }
 }
@@ -451,7 +451,7 @@ function setGitBackupConfig({ repo, token, auto }) {
       else localStorage.removeItem(GIT_BACKUP_TOKEN_KEY);
     }
     if (auto != null) localStorage.setItem(GIT_BACKUP_AUTO_KEY, auto ? "1" : "0");
-  } catch {}
+  } catch (_e) { /* best-effort */ }
 }
 
 // Base64-encode a UTF-8 string (browser btoa needs latin-1; we encode UTF-8 first)
@@ -523,7 +523,7 @@ async function pushBackupToGit() {
     const errText = await put.text().catch(() => "");
     throw new Error(`PUT ${put.status}: ${(errText || put.statusText || "").slice(0, 200)}`);
   }
-  try { localStorage.setItem(GIT_BACKUP_LAST_KEY, new Date().toISOString()); } catch {}
+  try { localStorage.setItem(GIT_BACKUP_LAST_KEY, new Date().toISOString()); } catch (_e) { /* best-effort */ }
   return await put.json();
 }
 
@@ -587,7 +587,7 @@ async function downloadBackup() {
   const filename = `dialledin_backup_${getToday()}.json`;
   const ok = downloadJSON(backup, filename);
   if (ok) {
-    try { await window.storage.set("ft:lastBackupDownload", JSON.stringify({ ts: Date.now(), date: getToday() })); } catch {}
+    try { await window.storage.set("ft:lastBackupDownload", JSON.stringify({ ts: Date.now(), date: getToday() })); } catch (_e) { /* best-effort */ }
   }
   return ok;
 }
@@ -1723,7 +1723,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           }
           return JSON.parse(s);
         })();
-      } catch {
+      } catch (_e) {
         throw new Error(`unparseable: ${text.slice(0, 50)}`);
       }
       setCal(String(parsed.calories || ""));
@@ -1789,7 +1789,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
           }
           return JSON.parse(s);
         })();
-      } catch {
+      } catch (_e) {
         throw new Error(`unparseable: ${text.slice(0, 50)}`);
       }
       setCal(String(parsed.calories || ""));
@@ -1921,7 +1921,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
         });
         await updateData("meals", { ...data.meals, [logDate]: updatedDay });
       }
-    } catch {}
+    } catch (_e) { /* best-effort */ }
     setDeletingId(null);
   }
 
@@ -1958,7 +1958,7 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       setResetConfirming(false);
       setActionFlash("reset");
       setTimeout(() => setActionFlash(""), 2500);
-    } catch {}
+    } catch (_e) { /* best-effort */ }
     setResetting(false);
   }
 
@@ -2292,10 +2292,10 @@ function WorkoutModal({ data, updateData, onClose }) {
             }
           } else {
             // stale, clean up
-            try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch {}
+            try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch (_e) { /* best-effort */ }
           }
         }
-      } catch {}
+      } catch (_e) { /* best-effort */ }
       if (!cancelled) setHasRestored(true);
     })();
     return () => { cancelled = true; };
@@ -2409,7 +2409,7 @@ function WorkoutModal({ data, updateData, onClose }) {
       };
       await updateData("workouts", [newW, ...data.workouts]);
       // Clear active session storage now that workout is saved
-      try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch {}
+      try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch (_e) { /* best-effort */ }
       onClose();
     } catch (e) {
       console.error("Save workout failed:", e);
@@ -2418,7 +2418,7 @@ function WorkoutModal({ data, updateData, onClose }) {
   }
 
   async function discardSession() {
-    try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch {}
+    try { await window.storage.delete(ACTIVE_WORKOUT_KEY); } catch (_e) { /* best-effort */ }
     setShowCloseConfirm(false);
     setResumedAt(null);
     onClose();
@@ -2999,7 +2999,7 @@ function BackupNagBanner() {
         setJustDone(true);
         setTimeout(() => setDismissed(true), 1500);
       }
-    } catch {}
+    } catch (_e) { /* best-effort */ }
     setDownloading(false);
   }
 
@@ -3115,7 +3115,7 @@ function TodayScoreCard({ data, onAction }) {
         try {
           const r = await window.storage.get("ft:dailyScores");
           if (r && r.value) history = JSON.parse(r.value) || {};
-        } catch {}
+        } catch (_e) { /* best-effort */ }
         history[today] = { composite: score.composite, pillars: score.pillars, ts: Date.now() };
         const cutoff = (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 30); return toLocalDateStr(d); })();
         for (const k of Object.keys(history)) if (k < cutoff) delete history[k];
@@ -3129,7 +3129,7 @@ function TodayScoreCard({ data, onAction }) {
         const ydDate = (() => { const d = new Date(today + "T12:00:00"); d.setDate(d.getDate() - 1); return toLocalDateStr(d); })();
         const ydScore = history[ydDate]?.composite ?? null;
         if (!cancelled) setTrend({ dir, delta, n: prevDates.length, avg, ydScore });
-      } catch {}
+      } catch (_e) { /* best-effort */ }
     }
     go();
     return () => { cancelled = true; };
@@ -3244,7 +3244,7 @@ function ScoreTrendChart({ data, todayScoreProp }) {
       try {
         const r = await window.storage.get("ft:dailyScores");
         if (r && r.value && !cancelled) setHistory(JSON.parse(r.value) || {});
-      } catch {}
+      } catch (_e) { /* best-effort */ }
     }
     load();
   }, []);
@@ -4546,7 +4546,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
       try {
         const raw = await window.storage.get(CUSTOM_ROUTINES_KEY);
         if (raw && raw.value) setCustomRoutines(JSON.parse(raw.value));
-      } catch {}
+      } catch (_e) { /* best-effort */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4818,7 +4818,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
   }
 
   async function discardSession() {
-    try { await window.storage.delete(LIVE_SESSION_KEY); } catch {}
+    try { await window.storage.delete(LIVE_SESSION_KEY); } catch (_e) { /* best-effort */ }
     // Reset state to fresh
     setSessionStarted(false);
     setSessionStart(Date.now());
@@ -4905,7 +4905,7 @@ function TodayTab({ data, updateData, onLogMeal }) {
     const newW = { id:`w${Date.now()}`, date:t, name:browseDay, split:browseDay, note:sessionNote?`"${sessionNote}"`:"", duration:dur, volume:Math.round(totalVol), sets:allDone.length, prs:prCount, exercises:exLog };
     await updateData("workouts", [newW, ...data.workouts]);
     // Clear saved active session — workout is now in history
-    try { await window.storage.delete(LIVE_SESSION_KEY); } catch {}
+    try { await window.storage.delete(LIVE_SESSION_KEY); } catch (_e) { /* best-effort */ }
     setFinished(true);
     setResumedAt(null);
   }
@@ -4919,14 +4919,14 @@ function TodayTab({ data, updateData, onLogMeal }) {
   const saveCustomRoutine = async (routine) => {
     const updated = [...customRoutines, routine];
     setCustomRoutines(updated);
-    try { await window.storage.set(CUSTOM_ROUTINES_KEY, JSON.stringify(updated)); } catch {}
+    try { await window.storage.set(CUSTOM_ROUTINES_KEY, JSON.stringify(updated)); } catch (_e) { /* best-effort */ }
   };
 
   // Vibrate when rest timer completes (fires once per rest period)
   useEffect(() => {
     if (restDone && restActive && !restAlertFired) {
       setRestAlertFired(true);
-      try { navigator.vibrate && navigator.vibrate([150, 80, 150, 80, 150]); } catch {}
+      try { navigator.vibrate && navigator.vibrate([150, 80, 150, 80, 150]); } catch (_e) { /* best-effort */ }
     }
     if (!restActive) setRestAlertFired(false); // reset for next set
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5557,14 +5557,14 @@ function PlanTab({ data }) {
       try {
         const raw = await window.storage.get(PLAN_CUSTOM_KEY);
         if (raw && raw.value) setPlanCustom(JSON.parse(raw.value));
-      } catch {}
+      } catch (_e) { /* best-effort */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const savePlanCustom = async (updated) => {
     setPlanCustom(updated);
-    try { await window.storage.set(PLAN_CUSTOM_KEY, JSON.stringify(updated)); } catch {}
+    try { await window.storage.set(PLAN_CUSTOM_KEY, JSON.stringify(updated)); } catch (_e) { /* best-effort */ }
   };
 
   const toggleBaseMilestone = (phaseId, idx) => {
@@ -6229,7 +6229,7 @@ CURRENT PRs:
 ${data.prs.map(p=>`- ${p.exercise}: ${p.weight} lbs × ${p.reps} reps (${p.date})`).join("\n")}
 
 RECENT WORKOUTS (${recentWorkouts.length} sessions):
-${recentWorkouts.map(w=>`- ${w.date} | ${w.name} | ${w.sets} sets | ${(w.volume/1000).toFixed(1)}k lbs volume | ${w.prs} PRs${w.note ? ` | note: ${w.note}` : ""}${w.exercises?.length ? " | exercises: "+w.exercises.map(e=>e.name+(e.sets?` (${e.sets})`:"")).join(", ") : ""}`).join("\n")}
+${recentWorkouts.map(w=>`- ${w.date} | ${w.name} | ${w.sets} sets | ${(w.volume/1000).toFixed(1)}k lbs volume | ${w.prs} PRs${w.note ? ` | note: ${sanitizePromptInput(w.note)}` : ""}${w.exercises?.length ? " | exercises: "+w.exercises.map(e=>e.name+(e.sets?` (${e.sets})`:"")).join(", ") : ""}`).join("\n")}
 
 RECENT NUTRITION (${recentMeals.length} days):
 ${recentMeals.map(([date,m])=>`- ${date}: ${m.calories} kcal | ${m.protein}g protein | ${m.carbs}g carbs | ${m.fat}g fat${m.items?.length ? " | foods: "+m.items.slice(0,3).join(", ") : ""}`).join("\n")}
@@ -6525,7 +6525,7 @@ function CoachChat({ data }) {
       const milestone = { id:`m_${Date.now()}`, phaseId: proposal.phaseId, text: proposal.text, done: false };
       const updated = { ...planCustom, customMilestones: [...(planCustom.customMilestones || []), milestone] };
       await window.storage.set(PLAN_CUSTOM_KEY, JSON.stringify(updated));
-    } catch {}
+    } catch (_e) { /* best-effort */ }
   };
 
   // Load chat history from storage
@@ -6544,7 +6544,7 @@ function CoachChat({ data }) {
             timestamp: getToday(),
           }]);
         }
-      } catch {}
+      } catch (_e) { /* best-effort */ }
       setHistoryLoaded(true);
     }
     load();
@@ -6565,7 +6565,7 @@ function CoachChat({ data }) {
   async function saveHistory(msgs) {
     try {
       await window.storage.set("ft:chatHistory", JSON.stringify(msgs.slice(-40)));
-    } catch {}
+    } catch (_e) { /* best-effort */ }
   }
 
   async function sendMessage() {
@@ -6674,7 +6674,7 @@ function CoachChat({ data }) {
             const match = msg.content.match(/<PLAN_PROPOSAL>([\s\S]*?)<\/PLAN_PROPOSAL>/);
             if (match) {
               displayContent = msg.content.replace(/<PLAN_PROPOSAL>[\s\S]*?<\/PLAN_PROPOSAL>/g, "").trim();
-              try { proposal = JSON.parse(match[1]); } catch {}
+              try { proposal = JSON.parse(match[1]); } catch (_e) { /* best-effort */ }
             }
           }
           const proposalKey = `${i}_${proposal?.text}`;
@@ -7063,7 +7063,7 @@ function CoachTab({ data, updateData, onAction }) {
       try {
         const cached = await window.storage.get("ft:lastCoachAnalysis");
         if (cached) setLastAnalysis(JSON.parse(cached.value));
-      } catch {}
+      } catch (_e) { /* best-effort */ }
     }
     loadCached();
   }, []);
@@ -7663,6 +7663,62 @@ function VisionBoard({ data }) {
 }
 
 // ── Photo Comparison Component (gallery + timeline) ──────────────
+// ── PrimarySlot — extracted from PhotoComparison to avoid component-in-render violation ──
+function PrimarySlot({ label, photo, color, inputId, isUploading, uploadProgress, hint }) {
+  return (
+    <div>
+      <div style={{ fontFamily:F.mono, fontSize:11, color, marginBottom:6, letterSpacing:1 }}>{label}</div>
+      <label htmlFor={inputId} style={{ display:"block", cursor:"pointer" }}>
+        <div
+          style={{
+            height:180, borderRadius:12,
+            border:`2px dashed ${photo ? color : C.border}`,
+            background:C.surfaceAlt,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            overflow:"hidden", position:"relative",
+          }}
+        >
+          {isUploading ? (
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontSize:24, marginBottom:6 }}>⏳</div>
+              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>
+                {uploadProgress ? `Processing ${uploadProgress}...` : "Processing..."}
+              </div>
+            </div>
+          ) : photo ? (
+            <>
+              <img src={photo.src} alt={label} style={{ width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none" }} />
+              <div style={{ position:"absolute", bottom:6, left:6, background:"rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 7px", fontFamily:F.mono, fontSize:8, color, pointerEvents:"none" }}>
+                {photo.date}{photo.weight ? ` · ${photo.weight}lb` : ""}
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign:"center", padding:12, pointerEvents:"none" }}>
+              <div style={{ fontSize:24, marginBottom:6 }}>📷</div>
+              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>{hint}</div>
+            </div>
+          )}
+        </div>
+      </label>
+      <label htmlFor={inputId} style={{ display:"block", cursor:"pointer", marginTop:6, textAlign:"center", fontFamily:F.mono, fontSize:11, color, padding:"4px" }}>
+        {photo ? "+ Add more (multi-select)" : "+ Add photos (multi-select)"}
+      </label>
+    </div>
+  );
+}
+
+// ── Thumb — extracted from PhotoComparison to avoid component-in-render violation ──
+function Thumb({ photo, onClick, color }) {
+  return (
+    <div onClick={onClick} style={{ flexShrink:0, cursor:"pointer", position:"relative" }}>
+      <img src={photo.src} alt="" style={{ width:64, height:80, objectFit:"cover", borderRadius:8, border:`1px solid ${C.border}`, display:"block" }} />
+      <div style={{ position:"absolute", bottom:2, left:2, right:2, background:"rgba(0,0,0,0.75)", borderRadius:3, padding:"1px 4px", fontFamily:F.mono, fontSize:7, color, textAlign:"center" }}>
+        {photo.date.slice(5)}
+      </div>
+    </div>
+  );
+}
+
 function PhotoComparison({ data }) {
   const [progressPhotos, setProgressPhotos] = useState([]);
   const [goalPhotos, setGoalPhotos] = useState([]);
@@ -7677,25 +7733,25 @@ function PhotoComparison({ data }) {
       try {
         let progressIdx = [];
         let goalIdx = [];
-        try { progressIdx = JSON.parse((await window.storage.get("ft:photoProgressIndex")).value); } catch {}
-        try { goalIdx = JSON.parse((await window.storage.get("ft:photoGoalIndex")).value); } catch {}
+        try { progressIdx = JSON.parse((await window.storage.get("ft:photoProgressIndex")).value); } catch (_e) { /* best-effort */ }
+        try { goalIdx = JSON.parse((await window.storage.get("ft:photoGoalIndex")).value); } catch (_e) { /* best-effort */ }
 
         const progress = await Promise.all(progressIdx.map(async meta => {
           try {
             const r = await window.storage.get(`ft:photo:progress:${meta.id}`);
             return JSON.parse(r.value);
-          } catch { return null; }
+          } catch (_e) { return null; }
         }));
         const goals = await Promise.all(goalIdx.map(async meta => {
           try {
             const r = await window.storage.get(`ft:photo:goal:${meta.id}`);
             return JSON.parse(r.value);
-          } catch { return null; }
+          } catch (_e) { return null; }
         }));
 
         setProgressPhotos(progress.filter(Boolean));
         setGoalPhotos(goals.filter(Boolean));
-      } catch {}
+      } catch (_e) { /* best-effort */ }
       setLoading(false);
     }
     load();
@@ -7737,7 +7793,7 @@ function PhotoComparison({ data }) {
         // Update index (newest first) — re-read each iteration so concurrent saves stay consistent
         const indexKey = type === "progress" ? "ft:photoProgressIndex" : "ft:photoGoalIndex";
         let idx = [];
-        try { idx = JSON.parse((await window.storage.get(indexKey)).value); } catch {}
+        try { idx = JSON.parse((await window.storage.get(indexKey)).value); } catch (_e) { /* best-effort */ }
         idx.unshift({ id, date: today });
         await window.storage.set(indexKey, JSON.stringify(idx));
 
@@ -7771,10 +7827,10 @@ function PhotoComparison({ data }) {
   }
 
   async function deletePhoto(id, type) {
-    try { await window.storage.delete(`ft:photo:${type}:${id}`); } catch {}
+    try { await window.storage.delete(`ft:photo:${type}:${id}`); } catch (_e) { /* best-effort */ }
     const indexKey = type === "progress" ? "ft:photoProgressIndex" : "ft:photoGoalIndex";
     let idx = [];
-    try { idx = JSON.parse((await window.storage.get(indexKey)).value); } catch {}
+    try { idx = JSON.parse((await window.storage.get(indexKey)).value); } catch (_e) { /* best-effort */ }
     idx = idx.filter(p => p.id !== id);
     await window.storage.set(indexKey, JSON.stringify(idx));
 
@@ -7799,57 +7855,7 @@ function PhotoComparison({ data }) {
   const primaryNow = progressPhotos[0];
   const primaryGoal = goalPhotos[0];
 
-  // ── Sub: primary slot (top side-by-side) ──
-  const PrimarySlot = ({ label, photo, color, inputId, isUploading, uploadProgress, hint }) => (
-    <div>
-      <div style={{ fontFamily:F.mono, fontSize:11, color, marginBottom:6, letterSpacing:1 }}>{label}</div>
-      <label htmlFor={inputId} style={{ display:"block", cursor:"pointer" }}>
-        <div
-          style={{
-            height:180, borderRadius:12,
-            border:`2px dashed ${photo ? color : C.border}`,
-            background:C.surfaceAlt,
-            display:"flex", alignItems:"center", justifyContent:"center",
-            overflow:"hidden", position:"relative",
-          }}
-        >
-          {isUploading ? (
-            <div style={{ textAlign:"center" }}>
-              <div style={{ fontSize:24, marginBottom:6 }}>⏳</div>
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>
-                {uploadProgress ? `Processing ${uploadProgress}...` : "Processing..."}
-              </div>
-            </div>
-          ) : photo ? (
-            <>
-              <img src={photo.src} alt={label} style={{ width:"100%", height:"100%", objectFit:"cover", pointerEvents:"none" }} />
-              <div style={{ position:"absolute", bottom:6, left:6, background:"rgba(0,0,0,0.75)", borderRadius:5, padding:"2px 7px", fontFamily:F.mono, fontSize:8, color, pointerEvents:"none" }}>
-                {photo.date}{photo.weight ? ` · ${photo.weight}lb` : ""}
-              </div>
-            </>
-          ) : (
-            <div style={{ textAlign:"center", padding:12, pointerEvents:"none" }}>
-              <div style={{ fontSize:24, marginBottom:6 }}>📷</div>
-              <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray }}>{hint}</div>
-            </div>
-          )}
-        </div>
-      </label>
-      <label htmlFor={inputId} style={{ display:"block", cursor:"pointer", marginTop:6, textAlign:"center", fontFamily:F.mono, fontSize:11, color, padding:"4px" }}>
-        {photo ? "+ Add more (multi-select)" : "+ Add photos (multi-select)"}
-      </label>
-    </div>
-  );
-
-  // ── Sub: thumbnail (in scrolling strip) ──
-  const Thumb = ({ photo, onClick, color }) => (
-    <div onClick={onClick} style={{ flexShrink:0, cursor:"pointer", position:"relative" }}>
-      <img src={photo.src} alt="" style={{ width:64, height:80, objectFit:"cover", borderRadius:8, border:`1px solid ${C.border}`, display:"block" }} />
-      <div style={{ position:"absolute", bottom:2, left:2, right:2, background:"rgba(0,0,0,0.75)", borderRadius:3, padding:"1px 4px", fontFamily:F.mono, fontSize:7, color, textAlign:"center" }}>
-        {photo.date.slice(5)}
-      </div>
-    </div>
-  );
+  // ── Sub-components PrimarySlot and Thumb defined at module scope above ──
 
   return (
     <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
@@ -8209,6 +8215,23 @@ function TodayView({ todayMeals, calTarget, protTarget, carbTarget, fatTarget, m
   );
 }
 
+// ── RangeToggle — extracted from HistoryView to avoid component-in-render violation ──
+function RangeToggle({ histRange, setHistRange }) {
+  return (
+    <div style={{ display:"flex", gap:6, marginBottom:14 }}>
+      {[7,30].map(function(n) {
+        const active = histRange === n;
+        return (
+          <button key={n} onClick={() => setHistRange(n)}
+            style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:11, color:active?C.lime:C.gray, cursor:"pointer" }}>
+            {n === 7 ? "7 DAYS" : "30 DAYS"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── history view ──────────────────────────────────────────────────
 function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, carbTarget, fatTarget, chartMacro, setChartMacro, histView, setHistView, lastNDays, expandedDay, setExpandedDay, deleteMealItem, setEditingItem }) {
   const days = lastNDays(histRange);
@@ -8254,20 +8277,7 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
   const microAvgs = {};
   microKeys.forEach(function(k) { microAvgs[k] = microDaysWithData > 0 ? Math.round(microTotals[k] / microDaysWithData) : 0; });
 
-  // ── range + view toggles ──
-  const RangeToggle = () => (
-    <div style={{ display:"flex", gap:6, marginBottom:14 }}>
-      {[7,30].map(function(n) {
-        const active = histRange === n;
-        return (
-          <button key={n} onClick={() => setHistRange(n)}
-            style={{ flex:1, padding:"9px 0", background:active?"rgba(200,255,0,0.08)":"none", border:"1px solid "+(active?C.lime:C.border), borderRadius:8, fontFamily:F.mono, fontSize:11, color:active?C.lime:C.gray, cursor:"pointer" }}>
-            {n === 7 ? "7 DAYS" : "30 DAYS"}
-          </button>
-        );
-      })}
-    </div>
-  );
+  // ── range + view toggles ── (RangeToggle defined at module scope above)
 
   return (
     <div>
@@ -8287,7 +8297,7 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
       {/* ═══ MACROS VIEW ═══ */}
       {histView === "macros" && (
         <div>
-          <RangeToggle />
+          <RangeToggle histRange={histRange} setHistRange={setHistRange} />
           {/* Macro chart */}
           <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"14px 10px 10px", marginBottom:12 }}>
             <div style={{ display:"flex", gap:5, marginBottom:12, paddingLeft:4, paddingRight:4 }}>
@@ -8435,7 +8445,7 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
       {/* ═══ MICROS VIEW ═══ */}
       {histView === "micros" && (
         <div>
-          <RangeToggle />
+          <RangeToggle histRange={histRange} setHistRange={setHistRange} />
           <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:14, padding:"16px 16px 14px", marginBottom:12 }}>
             <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, letterSpacing:1.5, marginBottom:4 }}>AVG / DAY</div>
             {microDaysWithData === 0 ? (
