@@ -1,10 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 
 import { C, F } from "../constants";
 import { getToday, toLocalDateStr } from "../utils";
 import { computeTodayScore } from "../lib/scoring";
 
-export function ScoreTrendChart({ data, todayScoreProp }) {
+export const ScoreTrendChart = memo(function ScoreTrendChart({ data, todayScoreProp }) {
   const [history, setHistory] = useState({});
   const [expanded, setExpanded] = useState(false);
 
@@ -133,5 +133,5 @@ export function ScoreTrendChart({ data, todayScoreProp }) {
       </svg>
     </div>
   );
-}
+});
 

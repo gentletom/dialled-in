@@ -340,3 +340,13 @@ export const MEASURE_FIELDS = [
   {key:"calves",label:"Calves",color:C.blue},
   {key:"bodyFat",label:"Body Fat %",color:C.orange},
 ];
+
+// ── Meal slots (used by MealModal + meal entry list) ─────────────
+export const MEAL_SLOTS = [
+  { id: "breakfast",    label: "Breakfast", emoji: "🍳" },
+  { id: "lunch",        label: "Lunch",     emoji: "🥗" },
+  { id: "snack",        label: "Snack",     emoji: "🥨" },
+  { id: "pre_workout",  label: "Pre-WO",    emoji: "⚡" },
+  { id: "post_workout", label: "Post-WO",   emoji: "💪" },
+  { id: "dinner",       label: "Dinner",    emoji: "🍽️" },
+];

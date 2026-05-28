@@ -1,7 +1,8 @@
 
+import { memo } from "react";
 import { C, F, PILLAR_INFO, DAYS, SPLIT_MAP } from "../constants";
 
-export function PillarInfoDrawer({ pillar, score, _data, onClose }) {
+export const PillarInfoDrawer = memo(function PillarInfoDrawer({ pillar, score, _data, onClose }) {
   const info = PILLAR_INFO[pillar];
   if (!info) return null;
   const dayName = DAYS[new Date().getDay()];
@@ -54,5 +55,5 @@ export function PillarInfoDrawer({ pillar, score, _data, onClose }) {
       </div>
     </div>
   );
-}
+});
 

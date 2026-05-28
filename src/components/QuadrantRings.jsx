@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 
-export function QuadrantRings({ pillars, _composite, _color, onRingTap }) {
+export const QuadrantRings = memo(function QuadrantRings({ pillars, _composite, _color, onRingTap }) {
   const [anim, setAnim] = useState(0);
   useEffect(() => {
     let rafId;
@@ -47,5 +47,5 @@ export function QuadrantRings({ pillars, _composite, _color, onRingTap }) {
       {/* center ring removed */}
     </svg>
   );
-}
+});
 
