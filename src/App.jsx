@@ -36,6 +36,58 @@ function aiHeaders() {
 }
 
 
+// ── Error Boundary ────────────────────────────────────────────────
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("DIALLED IN crash:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center",
+          justifyContent: "center", height: "100vh", padding: 32,
+          background: "#0a0a0a", color: "#ffffff", fontFamily: "system-ui",
+          gap: 16, textAlign: "center"
+        }}>
+          <div style={{ fontSize: 48 }}>⚠️</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>Something went wrong</div>
+          <div style={{ fontSize: 14, color: "#888", maxWidth: 280 }}>
+            {this.state.error?.message || "An unexpected error occurred"}
+          </div>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{
+              marginTop: 8, padding: "12px 24px", borderRadius: 12,
+              background: "#c6f135", color: "#0a0a0a",
+              border: "none", fontSize: 15, fontWeight: 700, cursor: "pointer"
+            }}
+          >
+            Try Again
+          </button>
+          <button
+            onClick={() => { localStorage.clear(); window.location.reload(); }}
+            style={{
+              padding: "10px 20px", borderRadius: 12, background: "transparent",
+              color: "#666", border: "1px solid #333", fontSize: 13, cursor: "pointer"
+            }}
+          >
+            Reset App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── Data Migrations ───────────────────────────────────────────────
 // CURRENT_DATA_VERSION bumps every time we change storage shape.
 // runMigrations() runs once on app load. It only ADDS new data,
@@ -1449,6 +1501,8 @@ function WeightModal({ data, updateData, onClose }) {
   const [weight, setWeight] = useState("");
   const [sleep, setSleep] = useState("");
   const [steps, setSteps] = useState("");
+  const [readiness, setReadiness] = useState(null);
+  const [soreness, setSoreness] = useState(null);
 
   async function save() {
     const t = getToday();
@@ -1458,6 +1512,8 @@ function WeightModal({ data, updateData, onClose }) {
       weight: weight ? parseFloat(weight) : ex.weight || null,
       sleep: sleep ? parseFloat(sleep) : ex.sleep || null,
       steps: steps ? parseInt(steps) : ex.steps || null,
+      readiness: readiness ?? ex.readiness ?? null,
+      soreness: soreness ?? ex.soreness ?? null,
     };
     const updated = [...data.weightLog.filter(w => w.date !== t), entry].sort((a,b) => a.date.localeCompare(b.date));
     await updateData("weightLog", updated);
@@ -1470,6 +1526,58 @@ function WeightModal({ data, updateData, onClose }) {
         <FInput label="Weight (lbs)" value={weight} onChange={setWeight} placeholder="175.8" color={C.lime} />
         <FInput label="Sleep (hours)" value={sleep} onChange={setSleep} placeholder="8" color={C.teal} />
         <FInput label="Steps (optional)" value={steps} onChange={setSteps} placeholder="8000" color={"#9D7FFF"} />
+
+        {/* Readiness */}
+        <div>
+          <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:6, letterSpacing:1 }}>
+            READINESS
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            {[
+              { v:1, emoji:"💀", label:"Wrecked" },
+              { v:2, emoji:"😴", label:"Tired" },
+              { v:3, emoji:"😐", label:"Average" },
+              { v:4, emoji:"💪", label:"Good" },
+              { v:5, emoji:"🔥", label:"Dialled" },
+            ].map(opt => (
+              <button key={opt.v} onClick={() => setReadiness(opt.v)}
+                style={{
+                  flex:1, padding:"8px 4px", borderRadius:10, border:"1px solid",
+                  borderColor: readiness === opt.v ? "#c6f135" : "#333",
+                  background: readiness === opt.v ? "#1a2200" : "#111",
+                  color: readiness === opt.v ? "#c6f135" : "#666",
+                  fontSize:18, cursor:"pointer", display:"flex",
+                  flexDirection:"column", alignItems:"center", gap:2,
+                }}
+              >
+                <span>{opt.emoji}</span>
+                <span style={{ fontSize:8 }}>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Soreness */}
+        <div>
+          <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:6, letterSpacing:1 }}>
+            MUSCLE SORENESS
+          </div>
+          <div style={{ display:"flex", gap:6 }}>
+            {["None","Mild","Moderate","Severe"].map(opt => (
+              <button key={opt} onClick={() => setSoreness(opt.toLowerCase())}
+                style={{
+                  flex:1, padding:"9px 4px", borderRadius:8, border:"1px solid",
+                  borderColor: soreness === opt.toLowerCase() ? "#4488FF" : "#333",
+                  background: soreness === opt.toLowerCase() ? "#001133" : "#111",
+                  color: soreness === opt.toLowerCase() ? "#4488FF" : "#666",
+                  fontSize:11, cursor:"pointer", fontFamily:"monospace",
+                }}
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <SaveBtn onClick={save} />
     </Sheet>
@@ -1523,18 +1631,26 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       const userHint = (textDesc && textDesc.trim()) ? `User description: ${textDesc.trim()}` : null;
       contentBlocks.push({ type:"text", text: buildMacroPrompt(ctx, userHint) });
       if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: aiHeaders(),
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 1600,
-          messages: [{
-            role: "user",
-            content: contentBlocks,
-          }],
-        }),
-      });
+      const controller1 = new AbortController();
+      const timeoutId1 = setTimeout(() => controller1.abort(), 30000);
+      let resp;
+      try {
+        resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: aiHeaders(),
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1600,
+            messages: [{
+              role: "user",
+              content: contentBlocks,
+            }],
+          }),
+          signal: controller1.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId1);
+      }
       if (!resp.ok) {
         const errText = await resp.text().catch(() => "");
         throw new Error(`API ${resp.status}: ${errText.slice(0, 80) || "request failed"}`);
@@ -1566,7 +1682,8 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       setAiMsg(parsed.comment ? `✓ ${parsed.calories}kcal · ${parsed.protein}g protein — ${parsed.comment}` : `✓ AI: ${parsed.calories} kcal · ${parsed.protein}g protein — review and save`);
     } catch (e) {
       console.error("Food analysis error:", e);
-      const msg = (e && e.message) ? String(e.message).slice(0, 80) : "unknown";
+      const isAbort = e && e.name === "AbortError";
+      const msg = isAbort ? "Request timed out — check your connection and try again" : ((e && e.message) ? String(e.message).slice(0, 80) : "unknown");
       setAiMsg(`✗ ${msg} — describe in text below or enter manually`);
     }
     setAnalyzing(false);
@@ -1580,18 +1697,26 @@ function MealModal({ data, updateData, onClose, initialDate }) {
     try {
       const ctx = buildMealContext(data);
       if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: aiHeaders(),
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 1800,
-          messages: [{
-            role: "user",
-            content: buildMacroPrompt(ctx, textDesc),
-          }],
-        }),
-      });
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 30000);
+      let resp;
+      try {
+        resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: aiHeaders(),
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 1800,
+            messages: [{
+              role: "user",
+              content: buildMacroPrompt(ctx, textDesc),
+            }],
+          }),
+          signal: controller2.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId2);
+      }
       if (!resp.ok) {
         const errText = await resp.text().catch(() => "");
         throw new Error(`API ${resp.status}: ${errText.slice(0, 80) || "request failed"}`);
@@ -1623,7 +1748,8 @@ function MealModal({ data, updateData, onClose, initialDate }) {
       setAiMsg(parsed.comment ? `✓ ${parsed.calories}kcal · ${parsed.protein}g protein — ${parsed.comment}` : `✓ AI: ${parsed.calories} kcal · ${parsed.protein}g protein — review and save`);
     } catch (e) {
       console.error("Text analysis error:", e);
-      const msg = (e && e.message) ? String(e.message).slice(0, 80) : "unknown";
+      const isAbort = e && e.name === "AbortError";
+      const msg = isAbort ? "Request timed out — check your connection and try again" : ((e && e.message) ? String(e.message).slice(0, 80) : "unknown");
       setAiMsg(`✗ ${msg} — enter manually`);
     }
     setAnalyzing(false);
@@ -2859,11 +2985,24 @@ function BackupNagBanner() {
 // ── QuadrantRings — Whoop-style 2x2 ring grid, composite center (V2.1) ──
 // Each pillar normalized to /100 for display. Composite center circle.
 function QuadrantRings({ pillars, composite, color, onRingTap }) {
+  const [anim, setAnim] = useState(0);
+  useEffect(() => {
+    const start = performance.now();
+    const duration = 700;
+    function frame(now) {
+      const t = Math.min(1, (now - start) / duration);
+      // ease-out cubic
+      setAnim(1 - Math.pow(1 - t, 3));
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }, []);
+
   const rings = [
-    { cx:70,  cy:70,  pct: Math.min(100, pillars.activity || 0), clr:"#9D7FFF", label:"ACT"   },
-    { cx:210, cy:70,  pct: Math.min(100, pillars.fuel     || 0), clr:"#FFB800", label:"FUEL"  },
-    { cx:70,  cy:210, pct: Math.min(100, pillars.recovery || 0), clr:"#4488FF", label:"RECOV" },
-    { cx:210, cy:210, pct: Math.min(100, pillars.progress || 0), clr:"#00E5CC", label:"PROG"  },
+    { cx:70,  cy:70,  pct: Math.min(100, pillars.activity || 0) * anim, clr:"#9D7FFF", label:"ACT"   },
+    { cx:210, cy:70,  pct: Math.min(100, pillars.fuel     || 0) * anim, clr:"#FFB800", label:"FUEL"  },
+    { cx:70,  cy:210, pct: Math.min(100, pillars.recovery || 0) * anim, clr:"#4488FF", label:"RECOV" },
+    { cx:210, cy:210, pct: Math.min(100, pillars.progress || 0) * anim, clr:"#00E5CC", label:"PROG"  },
   ];
   const R = 52, CIRC = 2 * Math.PI * R;
   return (
@@ -2880,7 +3019,7 @@ function QuadrantRings({ pillars, composite, color, onRingTap }) {
               strokeDasharray={CIRC} strokeDashoffset={offset}
               strokeLinecap="round" transform={`rotate(-90,${cx},${cy})`} />
             <text x={cx} y={cy + 10} textAnchor="middle"
-              fontFamily="'Bebas Neue',sans-serif" fontSize="28" fill={clr}>{pct}</text>
+              fontFamily="'Bebas Neue',sans-serif" fontSize="28" fill={clr}>{Math.round(pct)}</text>
             <text x={cx} y={cy + 28} textAnchor="middle"
               fontFamily="monospace" fontSize="11" fill="#556" letterSpacing="1">{label}</text>
           </g>
@@ -3171,6 +3310,116 @@ function ScoreTrendChart({ data, todayScoreProp }) {
 }
 
 
+// ── Weekly Check-in Modal (Sunday ritual) ────────────────────────
+function WeeklyCheckinModal({ data, updateData, onClose }) {
+  const [weightTrend, setWeightTrend] = useState(null);
+  const [sessionsHit, setSessionsHit] = useState(null);
+  const [proteinDays, setProteinDays] = useState(null);
+  const [note, setNote] = useState("");
+
+  async function save() {
+    const today = getToday();
+    const checkin = { date: today, weightTrend, sessionsHit, proteinDays, note };
+    const prev = data.profile?.checkins || [];
+    await updateData("profile", {
+      ...data.profile,
+      lastCheckinDate: today,
+      checkins: [checkin, ...prev].slice(0, 12),
+    });
+    onClose();
+  }
+
+  return (
+    <Sheet onClose={onClose} title="WEEKLY CHECK-IN">
+      <div style={{ color:"#888", fontSize:13, marginBottom:20, lineHeight:1.5 }}>
+        Quick sync with your coach — 60 seconds, weekly ritual.
+      </div>
+
+      {/* Weight trend */}
+      <div style={{ marginBottom:16 }}>
+        <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:8, letterSpacing:1 }}>HOW'S YOUR WEIGHT TRENDING?</div>
+        <div style={{ display:"flex", gap:8 }}>
+          {[{v:"down",l:"↓ Dropping"},{v:"stable",l:"→ Stable"},{v:"up",l:"↑ Rising"}].map(o => (
+            <button key={o.v} onClick={() => setWeightTrend(o.v)}
+              style={{ flex:1, padding:"10px 4px", borderRadius:10, border:"1px solid",
+                borderColor: weightTrend===o.v?"#c6f135":"#333",
+                background: weightTrend===o.v?"#1a2200":"#111",
+                color: weightTrend===o.v?"#c6f135":"#666",
+                fontSize:12, cursor:"pointer" }}>
+              {o.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Sessions hit */}
+      <div style={{ marginBottom:16 }}>
+        <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:8, letterSpacing:1 }}>SESSIONS COMPLETED THIS WEEK</div>
+        <div style={{ display:"flex", gap:6 }}>
+          {[0,1,2,3,4,5,6,7].map(n => (
+            <button key={n} onClick={() => setSessionsHit(n)}
+              style={{ flex:1, padding:"8px 2px", borderRadius:8, border:"1px solid",
+                borderColor: sessionsHit===n?"#9D7FFF":"#333",
+                background: sessionsHit===n?"#0d0022":"#111",
+                color: sessionsHit===n?"#9D7FFF":"#666",
+                fontSize:13, cursor:"pointer", fontWeight: sessionsHit===n?700:400 }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Protein days */}
+      <div style={{ marginBottom:16 }}>
+        <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:8, letterSpacing:1 }}>PROTEIN TARGET HIT HOW MANY DAYS?</div>
+        <div style={{ display:"flex", gap:6 }}>
+          {[0,1,2,3,4,5,6,7].map(n => (
+            <button key={n} onClick={() => setProteinDays(n)}
+              style={{ flex:1, padding:"8px 2px", borderRadius:8, border:"1px solid",
+                borderColor: proteinDays===n?"#FFB800":"#333",
+                background: proteinDays===n?"#1a1200":"#111",
+                color: proteinDays===n?"#FFB800":"#666",
+                fontSize:13, cursor:"pointer", fontWeight: proteinDays===n?700:400 }}>
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Coach note */}
+      <div style={{ marginBottom:24 }}>
+        <div style={{ fontSize:11, color:"#888", fontFamily:"monospace", marginBottom:8, letterSpacing:1 }}>ANYTHING TO TELL YOUR COACH?</div>
+        <textarea
+          value={note} onChange={e => setNote(e.target.value)}
+          placeholder="e.g. left shoulder is tight, skipped Wednesday due to travel..."
+          rows={3}
+          style={{ width:"100%", padding:12, borderRadius:10, border:"1px solid #333",
+            background:"#111", color:"#fff", fontSize:14, resize:"none",
+            fontFamily:"system-ui", boxSizing:"border-box" }}
+        />
+      </div>
+
+      <SaveBtn onClick={save} disabled={weightTrend===null || sessionsHit===null || proteinDays===null} />
+    </Sheet>
+  );
+}
+
+function calcProteinConsistency(data) {
+  const today = getToday();
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today + "T12:00:00");
+    d.setDate(d.getDate() - i);
+    days.push(toLocalDateStr(d));
+  }
+  const target = data.profile?.proteinTarget || 180;
+  const hits = days.filter(date => {
+    const m = data.meals?.[date];
+    return m && (m.protein || 0) >= target * 0.9;
+  }).length;
+  return hits;
+}
+
 function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
   const t = getToday();
   // V2.0 — auto-trigger git backup once per session if enabled + >20h elapsed
@@ -3221,6 +3470,26 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
 
       {/* V2.1 — 7-day score sparkline (tap to expand 30-day) */}
       <ScoreTrendChart data={data} todayScoreProp={todayScore} />
+
+      {/* B3 — Weekly protein consistency */}
+      {(() => {
+        const hits = calcProteinConsistency(data);
+        return (
+          <div style={{ display:"flex", alignItems:"center", gap:8, padding:"12px 16px",
+            background:"#111", borderRadius:12, margin:"0 0 8px" }}>
+            <span style={{ fontSize:20 }}>🥩</span>
+            <div>
+              <div style={{ fontSize:13, color:"#888", fontFamily:"monospace" }}>PROTEIN CONSISTENCY</div>
+              <div style={{ fontSize:22, fontWeight:700, color: hits >= 5 ? "#c6f135" : hits >= 3 ? "#FFB800" : "#ff4444" }}>
+                {hits}/7 days
+              </div>
+            </div>
+            <div style={{ marginLeft:"auto", fontSize:11, color:"#555" }}>
+              ≥90% of target
+            </div>
+          </div>
+        );
+      })()}
 
       {/* V2.0 — Adaptive coach nudges (rule-based MVP) */}
       {(() => {
@@ -3390,6 +3659,23 @@ function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
 // ── Progressive Overload Engine ───────────────────────────────────
 // Double progression: own all reps at top of range → add weight
 // Returns { prescribedWeight, prescribedReps, lastWeight, lastReps, lastDate, status }
+function getAvgRIRForExercise(data, exerciseName, lookback = 3) {
+  const recent = (data.workouts || [])
+    .filter(w => w.exercises?.some(e =>
+      e.name && e.name.toLowerCase().includes(exerciseName.toLowerCase().slice(0, 10))
+    ))
+    .slice(0, lookback);
+
+  const rirValues = recent.flatMap(w =>
+    (w.exercises || [])
+      .filter(e => e.name && e.name.toLowerCase().includes(exerciseName.toLowerCase().slice(0, 10)))
+      .flatMap(e => (e.sets || []).map(s => s.rir).filter(r => r !== null && r !== undefined))
+  );
+
+  if (rirValues.length === 0) return null;
+  return rirValues.reduce((a, b) => a + b, 0) / rirValues.length;
+}
+
 function getPrescription(exerciseName, workoutHistory, exerciseDef) {
   // Rep range from def e.g. "8-10" or "5-8"
   const repStr = exerciseDef.reps || "8-12";
@@ -5749,7 +6035,7 @@ function GainsTab({ data, onLogMeasurements, onLogMeal, onLogPR, onEditDay }) {
               key={date}
               onClick={() => onEditDay && onEditDay(date)}
               style={{
-                width:"100%", padding:"10px 8px", borderBottom:`1px solid ${C.border}`,
+                width:"100%", padding:"10px 8px",
                 background:"transparent", border:"none", borderBottom:`1px solid ${C.border}`,
                 cursor:"pointer", textAlign:"left",
                 display:"block",
@@ -5903,6 +6189,63 @@ Use phaseId 1 (Foundation May-Aug 2026), 2 (Accumulation Sep-Dec 2026), 3 (Peak 
 Only propose when you're genuinely recommending a plan change — not for every message. Keep proposals short and actionable.`;
 }
 
+// ── Readiness Banner ─────────────────────────────────────────────
+function getReadinessBanner(data) {
+  const today = getToday();
+  const entry = (data.weightLog || []).find(w => w.date === today);
+  if (!entry?.readiness) return null;
+  if (entry.readiness <= 2) return {
+    text: `Low readiness today (${["","💀 Wrecked","😴 Tired"][entry.readiness]}) — reduce working sets by 1, prioritize movement quality`,
+    color: "#ff4444", bg: "#1a0000"
+  };
+  if (entry.readiness === 5) return {
+    text: "🔥 Fully dialled — push hard today, chase PRs",
+    color: "#c6f135", bg: "#0d1a00"
+  };
+  return null;
+}
+
+// ── Extended coach context (adds check-in, readiness, RIR trend) ──
+function buildCoachContextExtended(data) {
+  let ctx = buildCoachContext(data);
+
+  // Weekly check-in
+  const lastCheckin = (data.profile?.checkins || [])[0];
+  if (lastCheckin) {
+    ctx += `\n\nLAST WEEKLY CHECK-IN (${lastCheckin.date}):\n`;
+    ctx += `- Weight trend: ${lastCheckin.weightTrend || "not reported"}\n`;
+    ctx += `- Sessions completed: ${lastCheckin.sessionsHit ?? "?"}/7\n`;
+    ctx += `- Protein days hit: ${lastCheckin.proteinDays ?? "?"}/7\n`;
+    if (lastCheckin.note) ctx += `- Athlete note: "${lastCheckin.note}"\n`;
+  }
+
+  // Today's readiness + soreness
+  const todayEntry = (data.weightLog || []).find(w => w.date === getToday());
+  if (todayEntry?.readiness) {
+    const rLabels = ["","💀 Wrecked","😴 Tired","😐 Average","💪 Good","🔥 Dialled"];
+    ctx += `\nTODAY'S READINESS: ${rLabels[todayEntry.readiness] || todayEntry.readiness}/5`;
+    if (todayEntry.soreness) ctx += ` | Muscle soreness: ${todayEntry.soreness}`;
+    ctx += `\n`;
+  }
+
+  // RIR trend across last 3 workouts
+  const recentWorkouts = (data.workouts || []).slice(0, 3);
+  const allRIRs = recentWorkouts.flatMap(w =>
+    (w.exercises || []).flatMap(e => (e.sets || []).map(s => s.rir).filter(r => r != null))
+  );
+  if (allRIRs.length > 0) {
+    const avgRIR = (allRIRs.reduce((a,b) => a+b, 0) / allRIRs.length).toFixed(1);
+    ctx += `\nRECENT EFFORT (avg RIR across last 3 sessions): ${avgRIR} — `;
+    ctx += parseFloat(avgRIR) > 2.5
+      ? "athlete is leaving significant reps in reserve, could push harder.\n"
+      : parseFloat(avgRIR) < 0.5
+      ? "athlete is grinding close to failure consistently — monitor recovery.\n"
+      : "effort level is in the productive hypertrophy zone.\n";
+  }
+
+  return ctx;
+}
+
 // ── Next Session Prescriptions Card ──────────────────────────────
 function NextSessionPrescriptions({ data }) {
   const [activeDay, setActiveDay] = useState(() => {
@@ -5923,12 +6266,20 @@ function NextSessionPrescriptions({ data }) {
   const statusColor = (s) => s === "progress" ? C.lime : s === "build" ? C.teal : C.gray;
   const statusLabel = (s) => s === "progress" ? "↑ ADD WEIGHT" : s === "build" ? "BEAT REPS" : "NEW";
 
+  const readinessBanner = getReadinessBanner(data);
   return (
     <div style={{ background:C.surface, border:`1px solid ${C.border}`, borderRadius:16, padding:16, marginBottom:12 }}>
       <SL>⚡ Next Session Prescriptions</SL>
       <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, marginBottom:10, marginTop:-8 }}>
         Progressive overload engine — tap any day to see what's prescribed
       </div>
+      {readinessBanner && (
+        <div style={{ background:readinessBanner.bg, border:`1px solid ${readinessBanner.color}40`,
+          borderRadius:10, padding:"10px 14px", marginBottom:12,
+          fontFamily:F.mono, fontSize:12, color:readinessBanner.color, lineHeight:1.5 }}>
+          {readinessBanner.text}
+        </div>
+      )}
 
       {/* Day tabs */}
       <div style={{ display:"flex", gap:6, marginBottom:14 }}>
@@ -6034,6 +6385,22 @@ function NextSessionPrescriptions({ data }) {
                 No history — start conservative, log it, engine calibrates from here
               </div>
             )}
+            {/* C3: RIR feedback */}
+            {(() => {
+              const avgRIR = getAvgRIRForExercise(data, ex.name);
+              if (avgRIR === null) return null;
+              const rirColor = avgRIR > 2.5 ? "#FFB800" : avgRIR < 0.5 ? "#ff4444" : C.teal;
+              const rirText = avgRIR > 2.5
+                ? `Avg RIR ${avgRIR.toFixed(1)} — leaving reps in tank. Push closer to failure (target RIR 1-2).`
+                : avgRIR < 0.5
+                ? `Avg RIR ${avgRIR.toFixed(1)} — grinding hard. Consider a deload set or +5 lbs next session.`
+                : `Avg RIR ${avgRIR.toFixed(1)} — solid effort zone.`;
+              return (
+                <div style={{ fontFamily:F.mono, fontSize:10, color:rirColor, marginTop:4, opacity:0.85 }}>
+                  📊 {rirText}
+                </div>
+              );
+            })()}
           </div>
         );
       })}
@@ -6141,7 +6508,7 @@ function CoachChat({ data }) {
     setLoading(true);
 
     try {
-      const systemPrompt = buildCoachContext(data);
+      const systemPrompt = buildCoachContextExtended(data);
 
       // Build message history for API (exclude timestamps, last 20 messages)
       const apiMessages = newMessages.slice(-20).map(m => ({
@@ -6150,16 +6517,25 @@ function CoachChat({ data }) {
       }));
 
       if (!getApiKey()) throw new Error("No API key set. Add yours in the COACH tab under AI / API Key.");
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers: aiHeaders(),
-        body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001",
-          max_tokens:600,
-          system: systemPrompt,
-          messages: apiMessages,
-        }),
-      });
+      const controller3 = new AbortController();
+      const timeoutId3 = setTimeout(() => controller3.abort(), 30000);
+      let resp;
+      try {
+        resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method:"POST",
+          headers: aiHeaders(),
+          body:JSON.stringify({
+            model:"claude-haiku-4-5-20251001",
+            max_tokens:600,
+            system: systemPrompt,
+            messages: apiMessages,
+          }),
+          signal: controller3.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId3);
+      }
+      if (!resp.ok) throw new Error(`API error: ${resp.status}`);
 
       const d = await resp.json();
       const text = (d.content||[]).filter(x=>x.type==="text").map(x=>x.text).join("");
@@ -6169,7 +6545,9 @@ function CoachChat({ data }) {
       scrollChatToEnd();
       await saveHistory(updated);
     } catch (e) {
-      const errMsg = { role:"assistant", content:"Connection error — check your network and try again.", timestamp:getToday() };
+      const isAbort = e && e.name === "AbortError";
+      const errText = isAbort ? "Request timed out — check your connection and try again." : "Connection error — check your network and try again.";
+      const errMsg = { role:"assistant", content:errText, timestamp:getToday() };
       const updated = [...newMessages, errMsg];
       setMessages(updated);
       scrollChatToEnd();
@@ -6522,15 +6900,23 @@ function ApiKeyCard() {
     if (!getApiKey()) return;
     setTesting(true); setTestResult(""); setTestError("");
     try {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: aiHeaders(),
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 5,
-          messages: [{ role: "user", content: "ping" }],
-        }),
-      });
+      const controller4 = new AbortController();
+      const timeoutId4 = setTimeout(() => controller4.abort(), 30000);
+      let r;
+      try {
+        r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: aiHeaders(),
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 5,
+            messages: [{ role: "user", content: "ping" }],
+          }),
+          signal: controller4.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId4);
+      }
       if (r.ok) { setTestResult("ok"); }
       else {
         const txt = await r.text().catch(() => "");
@@ -6539,7 +6925,8 @@ function ApiKeyCard() {
       }
     } catch (e) {
       setTestResult("fail");
-      setTestError((e && e.message) || "network error");
+      const isAbort = e && e.name === "AbortError";
+      setTestError(isAbort ? "Request timed out — check your connection and try again" : ((e && e.message) || "network error"));
     }
     setTesting(false);
     setTimeout(() => { setTestResult(""); setTestError(""); }, 10000);
@@ -6615,7 +7002,7 @@ function CoachTab({ data, updateData, onAction }) {
     setAnalyzing(true);
     try {
       if (!getApiKey()) throw new Error("No API key set. Add yours in COACH → AI / API Key.");
-      const prompt = buildCoachContext(data) + `\n\nProvide a comprehensive analysis of this athlete's current state. Return ONLY valid JSON (no markdown, no prose before or after the JSON):
+      const prompt = buildCoachContextExtended(data) + `\n\nProvide a comprehensive analysis of this athlete's current state. Return ONLY valid JSON (no markdown, no prose before or after the JSON):
 {
   "overallStatus": "one sentence summary of where they are",
   "insights": [
@@ -6631,15 +7018,23 @@ function CoachTab({ data, updateData, onAction }) {
   "nextSessionFocus": "one specific thing to prioritize in the very next workout",
   "weeklyRating": 7
 }`;
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers: aiHeaders(),
-        body:JSON.stringify({
-          model:"claude-haiku-4-5-20251001",
-          max_tokens:2500,
-          messages:[{ role:"user", content:prompt }],
-        }),
-      });
+      const controller5 = new AbortController();
+      const timeoutId5 = setTimeout(() => controller5.abort(), 30000);
+      let resp;
+      try {
+        resp = await fetch("https://api.anthropic.com/v1/messages", {
+          method:"POST",
+          headers: aiHeaders(),
+          body:JSON.stringify({
+            model:"claude-haiku-4-5-20251001",
+            max_tokens:2500,
+            messages:[{ role:"user", content:prompt }],
+          }),
+          signal: controller5.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId5);
+      }
       if (!resp.ok) {
         const errText = await resp.text().catch(() => "");
         throw new Error(`API ${resp.status}: ${(errText || resp.statusText || "").slice(0, 120)}`);
@@ -7704,7 +8099,7 @@ function TodayView({ todayMeals, calTarget, protTarget, carbTarget, fatTarget, m
           </div>
         ) : (
           todayItems.map(function(item, i) {
-            const name = typeof item === "string" ? item : (item.name || "Meal");
+            const name = typeof item === "string" ? item : (item.description || item.name || "Meal");
             const kcal = typeof item === "object" ? Math.round(item.calories||0) : null;
             const prot = typeof item === "object" ? Math.round(item.protein||0) : null;
             const carb = typeof item === "object" ? Math.round(item.carbs||0)   : null;
@@ -7728,7 +8123,7 @@ function TodayView({ todayMeals, calTarget, protTarget, carbTarget, fatTarget, m
                         ✏️
                       </button>
                     )}
-                    <button onClick={() => deleteMealItem(t, i)}
+                    <button onClick={() => deleteMealItem(t, item.id || String(i))}
                       style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.orange }}>
                       🗑
                     </button>
@@ -7865,7 +8260,7 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
               const d = data.meals[date];
               const kcal    = d ? Math.round(d.calories) : 0;
               const protein = d ? Math.round(d.protein)  : 0;
-              const items   = d ? (d.items || []) : [];
+              const items   = d ? (d.entries && d.entries.length > 0 ? d.entries : (d.items || [])) : [];
               const isToday = date === t;
               const isYest  = (() => { const y = new Date(); y.setDate(y.getDate()-1); return date === toLocalDateStr(y); })();
               const label   = isToday ? "TODAY" : isYest ? "YESTERDAY" : date.slice(5);
@@ -7905,7 +8300,7 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
                         <div style={{ fontFamily:F.mono, fontSize:11, color:C.gray, padding:"6px 0" }}>No items logged</div>
                       ) : (
                         items.map(function(item, i) {
-                          const nm  = typeof item === "string" ? item : (item.name || "Meal");
+                          const nm  = typeof item === "string" ? item : (item.description || item.name || "Meal");
                           const kc  = typeof item === "object" ? Math.round(item.calories||0) : null;
                           const pr  = typeof item === "object" ? Math.round(item.protein||0)  : null;
                           const cr  = typeof item === "object" ? Math.round(item.carbs||0)    : null;
@@ -7926,7 +8321,7 @@ function HistoryView({ histRange, setHistRange, data, t, calTarget, protTarget, 
                                   <button onClick={() => setEditingItem({ date, idx:i, item })}
                                     style={{ background:C.surfaceAlt, border:"1px solid "+C.border, borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.gray }}>✏️</button>
                                 )}
-                                <button onClick={() => deleteMealItem(date, i)}
+                                <button onClick={() => deleteMealItem(date, item.id || String(i))}
                                   style={{ background:"rgba(255,90,0,0.1)", border:"1px solid rgba(255,90,0,0.3)", borderRadius:5, padding:"3px 7px", cursor:"pointer", fontFamily:F.mono, fontSize:11, color:C.orange }}>🗑</button>
                               </div>
                             </div>
@@ -8077,8 +8472,9 @@ function FuelTab({ data, updateData, onLogMeal }) {
   const t = getToday();
   const todayMeals = data.meals[t] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
   // FIX 1: derive display items from V2 entries[] shape; fall back to legacy .items
+  // Display entries themselves (each entry = one logged meal); sub-items shown inside entry
   const todayItems = (todayMeals.entries && todayMeals.entries.length > 0)
-    ? (todayMeals.entries).flatMap(e => e.items || [])
+    ? todayMeals.entries
     : (todayMeals.items || []);
 
   const calTarget  = data.profile?.calorieTarget?.training || 3200;
@@ -8087,14 +8483,28 @@ function FuelTab({ data, updateData, onLogMeal }) {
   const fatTarget  = data.profile?.fatTarget                ||  85;
 
   // ── helpers ──────────────────────────────────────────────────────
-  async function deleteMealItem(date, idx) {
-    const day   = data.meals[date] || { calories:0, protein:0, carbs:0, fat:0, items:[] };
-    const items = (day.items || []).filter((_, i) => i !== idx);
-    const tot   = items.reduce((s, it) => typeof it === "object"
-      ? { calories: s.calories+(it.calories||0), protein: s.protein+(it.protein||0),
-          carbs: s.carbs+(it.carbs||0), fat: s.fat+(it.fat||0) }
-      : s, { calories:0, protein:0, carbs:0, fat:0 });
-    await updateData("meals", { ...data.meals, [date]: { ...day, ...tot, items } });
+  async function deleteMealItem(date, entryId) {
+    const day = data.meals[date] || { calories:0, protein:0, carbs:0, fat:0, entries:[] };
+    const updated = {
+      ...day,
+      entries: (day.entries || []).filter(e => e.id !== entryId),
+    };
+    // Recompute day-level totals from remaining entries
+    const allItems = updated.entries.flatMap(e => e.items || []);
+    const hasMacroItems = allItems.some(i => typeof i === "object" && (i.calories || i.protein));
+    if (hasMacroItems) {
+      updated.calories = allItems.reduce((s, i) => s + (i.calories || 0), 0);
+      updated.protein  = allItems.reduce((s, i) => s + (i.protein  || 0), 0);
+      updated.carbs    = allItems.reduce((s, i) => s + (i.carbs    || 0), 0);
+      updated.fat      = allItems.reduce((s, i) => s + (i.fat      || 0), 0);
+    } else {
+      // Re-sum from entries directly (each entry has its own macro totals)
+      updated.calories = updated.entries.reduce((s, e) => s + (e.calories || 0), 0);
+      updated.protein  = updated.entries.reduce((s, e) => s + (e.protein  || 0), 0);
+      updated.carbs    = updated.entries.reduce((s, e) => s + (e.carbs    || 0), 0);
+      updated.fat      = updated.entries.reduce((s, e) => s + (e.fat      || 0), 0);
+    }
+    await updateData("meals", { ...data.meals, [date]: updated });
   }
 
   async function saveItemEdit(date, idx, patch) {
@@ -8312,12 +8722,13 @@ function SettingsDrawer({ onClose }) {
 
 // ── Main App ──────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab] = useState("lifts");
+  const [tab, setTab] = useState("home");
   const [appData, setAppData] = useState(null);
   const [modal, setModal] = useState(null);
   const [mealEditDate, setMealEditDate] = useState(null);
   const [coachDrawerOpen, setCoachDrawerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showWeeklyCheckin, setShowWeeklyCheckin] = useState(false);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -8348,6 +8759,14 @@ export default function App() {
       // Background tasks — don't block UI
       // Take today's snapshot (silent in-app safety net)
       takeSnapshotIfNeeded().catch(() => {});
+
+      // Sunday weekly check-in trigger
+      const today = getToday();
+      const dayOfWeek = new Date(today + "T12:00:00").getDay();
+      const lastCheckin = profile?.lastCheckinDate;
+      if (dayOfWeek === 0 && lastCheckin !== today) {
+        setShowWeeklyCheckin(true);
+      }
     }
     load();
   }, []);
@@ -8424,20 +8843,22 @@ export default function App() {
       {/* Mobile app webview warning (shows above any tab content) */}
       <MobileWebViewBanner />
 
-      {tab === "home"    && <HomeTab data={appData} onLogMeal={() => setModal("meal")} onLogWeight={() => setModal("weight")} onAction={handleCoachAction} />}
-      {tab === "lifts"   && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
-      {tab === "fuel"    && <FuelTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
-      {tab === "profile" && (
-        <ProfileTab
-          data={appData}
-          updateData={updateData}
-          onLogMeasurements={() => setModal("measurements")}
-          onLogMeal={() => setModal("meal")}
-          onLogPR={() => setModal("pr")}
-          onEditDay={(date) => { setMealEditDate(date); setModal("meal"); }}
-          onOpenSettings={() => setSettingsOpen(true)}
-        />
-      )}
+      <ErrorBoundary>
+        {tab === "home"    && <HomeTab data={appData} onLogMeal={() => setModal("meal")} onLogWeight={() => setModal("weight")} onAction={handleCoachAction} />}
+        {tab === "lifts"   && <TodayTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
+        {tab === "fuel"    && <FuelTab data={appData} updateData={updateData} onLogMeal={() => setModal("meal")} />}
+        {tab === "profile" && (
+          <ProfileTab
+            data={appData}
+            updateData={updateData}
+            onLogMeasurements={() => setModal("measurements")}
+            onLogMeal={() => setModal("meal")}
+            onLogPR={() => setModal("pr")}
+            onEditDay={(date) => { setMealEditDate(date); setModal("meal"); }}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
+      </ErrorBoundary>
 
       {/* Bottom nav — center-FAB layout: [HOME][LIFTS][🧠][FUEL][PROFILE] */}
       <div style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.bg, borderTop:"1px solid "+C.border, display:"flex", alignItems:"flex-end", zIndex:100 }}>
@@ -8476,6 +8897,9 @@ export default function App() {
         })}
       </div>
 
+      {showWeeklyCheckin && appData && (
+        <WeeklyCheckinModal data={appData} updateData={updateData} onClose={() => setShowWeeklyCheckin(false)} />
+      )}
       {coachDrawerOpen && (
         <CoachDrawer data={appData} updateData={updateData} onAction={handleCoachAction} onClose={() => setCoachDrawerOpen(false)} />
       )}
