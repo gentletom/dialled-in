@@ -5,6 +5,15 @@ All notable changes to DIALLED IN are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
+## [Unreleased] — Re-entry Detection (2026-06-05)
+
+### Added
+- **Re-entry detection card on HOME (`src/lib/scoring.js`, `src/components/HomeTab.jsx`):** When no workout or weight entry has been logged for >3 days, an amber card appears at the top of HOME showing days away, a contextual coaching tip, and a volume-adjustment recommendation scaled to the gap length (4–7 days: drop 1 set; 8–14 days: −20% volume; 15+ days: 50–60% of normal). Card auto-hides once the user logs today; X dismisses for the session. CTA routes to the weight-log modal.
+- **`getReentryStatus(data)` pure function (`src/lib/scoring.js`):** Checks `data.workouts` and `data.weightLog` for most-recent activity using YYYY-MM-DD string sort (lexicographically correct); computes gap using local-midnight parse to avoid UTC boundary issues; returns `{ daysSince, volumeAdj, tip }` or `null`.
+- **13 regression tests for `getReentryStatus` (`src/lib/__tests__/scoring.test.js`):** Cover null paths (no data, active today via workout, active today via weight, 1-day gap, 3-day gap), volume tiers (4–7d, 8–14d, 15+d), multi-source date resolution (weightLog wins, workout wins), and single-source paths. Total suite: 183 tests, 0 failures.
+
+---
+
 ## [Unreleased] — Engineering Excellence (2026-05-28)
 
 ### Changed
