@@ -114,6 +114,48 @@ export function getAvgRIRForExercise(data, exerciseName, lookback = 3) {
   return rirValues.reduce((a, b) => a + b, 0) / rirValues.length;
 }
 
+// Returns re-entry status when user has been away >3 days with no logged activity.
+// Checks workouts + weightLog; returns null when user is active today or gap is ≤3 days.
+// Volume advice scales with gap length so the prescription is always conservative.
+export function getReentryStatus(data) {
+  const today = getToday();
+
+  // Already active today — card would be noise
+  const activeTodayWorkout = (data.workouts  || []).some(w => w.date === today);
+  const activeTodayWeight  = (data.weightLog || []).some(w => w.date === today);
+  if (activeTodayWorkout || activeTodayWeight) return null;
+
+  // Most recent logged date across workouts + weightLog (YYYY-MM-DD strings sort correctly)
+  const allDates = [
+    ...(data.workouts  || []).map(w => w.date),
+    ...(data.weightLog || []).map(w => w.date),
+  ].filter(Boolean).sort();
+  if (allDates.length === 0) return null;
+  const lastDate = allDates[allDates.length - 1];
+
+  // Date-string diff — parse as local midnight to avoid UTC boundary issues
+  const todayMs  = new Date(today    + "T00:00:00").getTime();
+  const lastMs   = new Date(lastDate + "T00:00:00").getTime();
+  const daysDiff = Math.round((todayMs - lastMs) / (1000 * 60 * 60 * 24));
+
+  if (daysDiff <= 3) return null;
+
+  // Volume advice scales with time away
+  let volumeAdj, tip;
+  if (daysDiff <= 7) {
+    volumeAdj = "drop 1 working set per exercise";
+    tip = "Your body adapted down slightly. Stay conservative today — you'll be back to full volume by next session.";
+  } else if (daysDiff <= 14) {
+    volumeAdj = "reduce volume ~20%";
+    tip = "Two weeks out — neural priming fades first. Hit the patterns with slightly lighter loads and focus on quality reps.";
+  } else {
+    volumeAdj = "start at 50–60% of normal volume";
+    tip = "Treat this like week 1 of a new phase. Earn your way back up — rushing it is how you get hurt.";
+  }
+
+  return { daysSince: daysDiff, volumeAdj, tip };
+}
+
 export function getReadinessBanner(data) {
   const today = getToday();
   const entry = (data.weightLog || []).find(w => w.date === today);

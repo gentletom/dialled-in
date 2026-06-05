@@ -6,6 +6,7 @@ import {
   computePillarProgress,
   computeTodayScore,
   getAvgRIRForExercise,
+  getReentryStatus,
 } from "../scoring.js";
 
 // ── Date constants ───────────────────────────────────────────────────────────
@@ -788,5 +789,103 @@ describe("getReadinessBanner — branch coverage for null guards", () => {
   it("data.weightLog = undefined → returns null (uses [] fallback)", () => {
     const data = makeData({ weightLog: undefined });
     expect(getReadinessBanner(data)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+// getReentryStatus
+// ─────────────────────────────────────────────────────────────────
+describe("getReentryStatus", () => {
+  // Build a date string N days before today
+  function daysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.toLocaleDateString("en-CA"); // YYYY-MM-DD
+  }
+
+  function today() { return new Date().toLocaleDateString("en-CA"); }
+
+  it("returns null when data has no workouts or weightLog", () => {
+    expect(getReentryStatus({ workouts: [], weightLog: [] })).toBeNull();
+  });
+
+  it("returns null when user logged a workout today", () => {
+    const data = { workouts: [{ date: today() }], weightLog: [] };
+    expect(getReentryStatus(data)).toBeNull();
+  });
+
+  it("returns null when user logged weight today", () => {
+    const data = { workouts: [], weightLog: [{ date: today() }] };
+    expect(getReentryStatus(data)).toBeNull();
+  });
+
+  it("returns null when last activity was 1 day ago (not re-entry)", () => {
+    const data = { workouts: [{ date: daysAgo(1) }], weightLog: [] };
+    expect(getReentryStatus(data)).toBeNull();
+  });
+
+  it("returns null when last activity was exactly 3 days ago (threshold not crossed)", () => {
+    const data = { workouts: [{ date: daysAgo(3) }], weightLog: [] };
+    expect(getReentryStatus(data)).toBeNull();
+  });
+
+  it("returns status when last activity was 4 days ago", () => {
+    const data = { workouts: [{ date: daysAgo(4) }], weightLog: [] };
+    const result = getReentryStatus(data);
+    expect(result).not.toBeNull();
+    expect(result.daysSince).toBe(4);
+    expect(result.volumeAdj).toContain("1 working set");
+  });
+
+  it("gives 'drop 1 working set' advice for 4–7 day gap", () => {
+    const data = { workouts: [{ date: daysAgo(7) }], weightLog: [] };
+    const result = getReentryStatus(data);
+    expect(result.volumeAdj).toBe("drop 1 working set per exercise");
+  });
+
+  it("gives '~20%' advice for 8–14 day gap", () => {
+    const data = { workouts: [{ date: daysAgo(10) }], weightLog: [] };
+    const result = getReentryStatus(data);
+    expect(result.volumeAdj).toBe("reduce volume ~20%");
+    expect(result.daysSince).toBe(10);
+  });
+
+  it("gives '50–60%' advice for 15+ day gap", () => {
+    const data = { workouts: [{ date: daysAgo(21) }], weightLog: [] };
+    const result = getReentryStatus(data);
+    expect(result.volumeAdj).toContain("50");
+    expect(result.daysSince).toBe(21);
+  });
+
+  it("uses the most recent date across both workouts and weightLog", () => {
+    // weightLog is more recent — should be used
+    const data = {
+      workouts:  [{ date: daysAgo(10) }],
+      weightLog: [{ date: daysAgo(2) }],
+    };
+    expect(getReentryStatus(data)).toBeNull(); // 2 days ≤ 3 — no card
+  });
+
+  it("uses workout date when it is more recent than weightLog", () => {
+    const data = {
+      workouts:  [{ date: daysAgo(2) }],
+      weightLog: [{ date: daysAgo(10) }],
+    };
+    expect(getReentryStatus(data)).toBeNull(); // workout 2 days ago — no card
+  });
+
+  it("returns status based on weightLog alone when workouts is empty", () => {
+    const data = { workouts: [], weightLog: [{ date: daysAgo(5) }] };
+    const result = getReentryStatus(data);
+    expect(result).not.toBeNull();
+    expect(result.daysSince).toBe(5);
+  });
+
+  it("includes a non-empty tip in all return cases", () => {
+    for (const days of [4, 8, 15]) {
+      const data = { workouts: [{ date: daysAgo(days) }], weightLog: [] };
+      const result = getReentryStatus(data);
+      expect(result.tip.length).toBeGreaterThan(10);
+    }
   });
 });
