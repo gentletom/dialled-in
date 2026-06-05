@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { X } from "lucide-react";
 import { C, F, DAYS, SPLIT_MAP, WORKOUTS } from "../constants";
 import { getToday, toLocalDateStr, getCompletenessItems, calc1RM } from "../utils";
-import { computeTodayScore, calcProteinConsistency } from "../lib/scoring";
+import { computeTodayScore, calcProteinConsistency, getReentryStatus } from "../lib/scoring";
 
 import { QuadrantRings } from "./QuadrantRings";
 import { shouldAutoBackup, pushBackupToGit, getLastBackupInfo, daysSince, downloadBackup, detectMobileAppContext, BACKUP_NAG_DAYS } from "../lib/storage";
@@ -106,6 +106,67 @@ export function SBtn({ onClick, children, color }) {
   );
 }
 
+
+// ── Re-entry Card ─────────────────────────────────────────────────
+// Shown when user has been away >3 days. Amber accent to signal
+// "attention needed" without being alarming. Tap "LOG TODAY" opens
+// the weight-log modal; X dismisses for the session.
+function ReentryCard({ daysSince: days, volumeAdj, tip, onDismiss, onLogToday }) {
+  return (
+    <div style={{
+      background: "#1a1200",
+      border: "1px solid #FFB80055",
+      borderLeft: "3px solid #FFB800",
+      borderRadius: 12,
+      padding: "14px 16px",
+      marginBottom: 12,
+      display: "flex",
+      gap: 12,
+    }}>
+      <div style={{ fontSize: 22, lineHeight: 1.2, marginTop: 2 }}>🏋️</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: F.mono, fontSize: 13, color: "#FFB800", fontWeight: 700,
+          letterSpacing: 0.3, marginBottom: 6 }}>
+          {days} DAY{days !== 1 ? "S" : ""} SINCE LAST LOG
+        </div>
+        <div style={{ fontFamily: F.mono, fontSize: 12, color: "#aaa", lineHeight: 1.55, marginBottom: 10 }}>
+          {tip}
+        </div>
+        <div style={{ background: "#FFB80018", border: "1px solid #FFB80040",
+          borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>
+          <div style={{ fontFamily: F.mono, fontSize: 11, color: "#777", marginBottom: 3,
+            letterSpacing: 1 }}>VOLUME ADJUSTMENT</div>
+          <div style={{ fontFamily: F.mono, fontSize: 13, color: "#FFB800", fontWeight: 700 }}>
+            {volumeAdj}
+          </div>
+        </div>
+        <button
+          onClick={onLogToday}
+          style={{
+            background: "#FFB800", border: "none", borderRadius: 8,
+            padding: "10px 16px", fontFamily: F.mono, fontSize: 12,
+            color: "#000", fontWeight: 700, cursor: "pointer",
+            letterSpacing: 0.5, width: "100%", minHeight: 44,
+          }}
+        >
+          LOG TODAY → GET BACK ON TRACK
+        </button>
+      </div>
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        style={{
+          background: "none", border: "none", color: "#555",
+          cursor: "pointer", padding: 4, lineHeight: 1,
+          minHeight: 44, minWidth: 44,
+          display: "flex", alignItems: "flex-start", justifyContent: "center",
+        }}
+      >
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
 
 
 export function MobileWebViewBanner() {
@@ -351,9 +412,26 @@ export function HomeTab({ data, onLogMeal, onLogWeight, onAction }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.workouts, data.meals, data.weightLog, data.profile]
   );
+  const reentryStatus = useMemo(
+    () => getReentryStatus(data),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.workouts, data.weightLog]
+  );
+  const [reentryDismissed, setReentryDismissed] = useState(false);
 
   return (
     <div style={{ padding:"18px 16px" }}>
+
+      {/* Re-entry — shown after >3 day logging gap; auto-hides once user logs today */}
+      {!reentryDismissed && reentryStatus && (
+        <ReentryCard
+          daysSince={reentryStatus.daysSince}
+          volumeAdj={reentryStatus.volumeAdj}
+          tip={reentryStatus.tip}
+          onDismiss={() => setReentryDismissed(true)}
+          onLogToday={() => onLogWeight && onLogWeight()}
+        />
+      )}
 
       {/* V2.1 — Today Score (QuadrantRings + morning framing) */}
       <TodayScoreCard data={data} onAction={(act) => {
